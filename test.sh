@@ -2,7 +2,7 @@ cat << 'EOF' > /tmp/dns_final.sh
 #!/bin/sh
 echo "=== OPENWRT DNS v10.3.1-FINAL ==="
 
-# 00. BACKUP
+# 00. BACKUP (с автоочисткой старых)
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_ACTUAL="/etc/config/backup-dns-$TIMESTAMP"
 mkdir -p "$BACKUP_ACTUAL"
@@ -96,8 +96,8 @@ command -v https-dns-proxy >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 ||
 }
 command -v https-dns-proxy >/dev/null 2>&1 || { echo "[!] Install FAILED"; exit 1; }
 
-# 7. DoH RESOLVERS
-echo "[7] Configuring DoH..."
+# 7. DoH RESOLVERS (БЕЗ Cloudflare/Google/Quad9)
+echo "[7] Configuring DoH (SAFE bootstrap)..."
 while uci -q delete https-dns-proxy.@https-dns-proxy[0]; do :; done
 uci -q delete https-dns-proxy.config 2>/dev/null
 uci set https-dns-proxy.config='main'
@@ -115,7 +115,7 @@ for url in \
     uci set https-dns-proxy.@https-dns-proxy[-1].listen_addr='127.0.0.1'
     uci set https-dns-proxy.@https-dns-proxy[-1].listen_port="$port"
     uci set https-dns-proxy.@https-dns-proxy[-1].resolver_url="$url"
-    uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='95.85.85.85'
+    uci -q delete https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns 2>/dev/null
     uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8'
     uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='94.140.14.14'
 done
@@ -123,8 +123,8 @@ uci add https-dns-proxy https-dns-proxy
 uci set https-dns-proxy.@https-dns-proxy[-1].listen_addr='127.0.0.1'
 uci set https-dns-proxy.@https-dns-proxy[-1].listen_port='5059'
 uci set https-dns-proxy.@https-dns-proxy[-1].resolver_url='https://common.dot.dns.yandex.net/dns-query'
+uci -q delete https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns 2>/dev/null
 uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8'
-uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='95.85.85.85'
 uci commit https-dns-proxy
 
 # 9. DNSMASQ TLD SPLIT
@@ -158,7 +158,7 @@ uci add_list dhcp.@dnsmasq[0].server='/connectivitycheck.gstatic.com/127.0.0.1#5
 uci add_list dhcp.@dnsmasq[0].server='/connectivitycheck.samsungcloud.com/127.0.0.1#5059'
 uci commit dhcp
 
-# 10. STATIC ANTI-BLOCK
+# 10. STATIC ANTI-BLOCK (безопасно для DPI)
 cat << 'ANTIBLOCK' > /etc/dnsmasq.d/anti-block.conf
 no-negcache
 bogus-nxdomain=185.179.189.20
@@ -238,7 +238,7 @@ for i in 0 1 2 3 4 5 6; do
 done
 uci commit https-dns-proxy
 
-# 15. ADD-STUB UTILITY (Исправлен якорь $)
+# 15. ADD-STUB UTILITY (с якорем $)
 cat << 'ADDSTUB' > /usr/bin/add-stub
 #!/bin/sh
 [ -z "$1" ] && { echo "Usage: add-stub <IP>"; exit 1; }
@@ -249,7 +249,7 @@ echo "[+] Added: $1"
 ADDSTUB
 chmod +x /usr/bin/add-stub
 
-# 16. DNS-DIAG UTILITY (Исправлен ложный 127.0.0.1)
+# 16. DNS-DIAG UTILITY (исправлен ложный 127.0.0.1)
 cat << 'DIAG' > /usr/bin/dns-diag
 #!/bin/sh
 echo "=== DNS DIAG ==="
