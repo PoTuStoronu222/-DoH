@@ -86,7 +86,3 @@ cat /etc/dnsmasq.d/anti-block.conf
 sh /root/rollback-dns.sh && reboot
 
 ```
-
-```
-
-```
