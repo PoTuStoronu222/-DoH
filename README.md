@@ -243,17 +243,6 @@ uci commit firewall
 
 После этого YouTube переключится на TCP 443, который обходится через Zapret.
 
-### ❌ Telegram web не работает
-
-**Решение:** Направить Telegram через Яндекс DNS:
-
-```bash
-for dom in telegram.org t.me web.telegram.org api.telegram.org; do
-    uci add_list dhcp.@dnsmasq[0].server="/${dom}/127.0.0.1#5059"
-done
-uci commit dhcp
-/etc/init.d/dnsmasq restart
-```
 
 ### ❌ Провайдер использует новую заглушку
 
