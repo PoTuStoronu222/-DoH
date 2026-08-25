@@ -117,12 +117,17 @@ if [ -f "$f_ts" ]; then
 fi
 
 # ============================================================
-# 4. CRON CLEANUP
+# 4. CRON CLEANUP (включая артефакты старых версий)
 # ============================================================
 echo "[4] Cron cleanup..."
 [ -f /etc/crontabs/root ] && {
     sed -i '/dnsmasq/d; /https-dns-proxy/d; /tailscale/d; /update-bogus-dns/d' /etc/crontabs/root
 }
+
+# Очистка артефактов от старых версий (v8.x, v9.x, v10.0)
+rm -f /usr/bin/update-bogus-dns
+rm -f /etc/dnsmasq.d/.bogus-old
+rm -f /etc/dnsmasq.d/telemetry.conf
 
 # ============================================================
 # 5. SYSTEM NTP SERVERS
@@ -234,12 +239,12 @@ uci commit dhcp
 
 # ============================================================
 # 10. ANTI-BLOCK FILTERS (ТОЛЬКО ФИКСИРОВАННЫЙ СПИСОК)
-# v10.1: Убрано автообновление (оно ломало сайты на DPI-сетях)
+# БЕЗОПАСНО для сетей с DPI-блокировками (ТСПУ)
 # ============================================================
 echo "[10] Anti-block filters (STATIC list - safe for DPI networks)..."
 cat << 'ANTIBLOCK' > /etc/dnsmasq.d/anti-block.conf
-# Фиксированный список IP-заглушек провайдеров (DNS-подмена)
-# НЕ обновляется автоматически - работает на DPI-сетях!
+# Фиксированный список IP-заглушек провайдеров (только DNS-подмена)
+# НЕ обновляется автоматически - безопасно для сетей с DPI (ТСПУ)!
 
 no-negcache
 
