@@ -91,7 +91,7 @@ DoH критически зависит от точного времени (SSL-
 ### Автоматическая установка (одна команда)
 
 ```bash
-wget -O /tmp/install.sh https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/DONE.v10.6.sh && sed -i 's/\r$//' /tmp/install.sh && sh /tmp/install.sh
+wget -O /tmp/install.sh https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/DONE.sh && sed -i 's/\r$//' /tmp/install.sh && sh /tmp/install.sh
 ```
 
 ### Что делает скрипт:
