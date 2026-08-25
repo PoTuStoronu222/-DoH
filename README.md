@@ -37,7 +37,7 @@ DoH критически зависим от точного времени (пр
 ## 📥 Установка (через SSH)
 
 ```bash
-wget -O /tmp/install.sh https://github.com/PoTuStoronu222/-DoH/releases/download/DoH/DONE.v10.0.sh && sh /tmp/install.sh
+wget -O /tmp/install.sh https://github.com/user-attachments/files/31422915/DONE.v10.0.sh && sed -i 's/\r$//' /tmp/install.sh && sh /tmp/install.sh
 
 ```
 
