@@ -71,6 +71,11 @@ cat /etc/dnsmasq.d/anti-block.conf
 ```bash
    logread | grep update-bogus-dns
 ```
+
+**5. Принудительно пересканировать DNS провайдера и обновить список заглушек:**
+```bash
+   sh /usr/bin/update-bogus-dns
+```
 ---
 
 
