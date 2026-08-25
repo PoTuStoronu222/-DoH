@@ -21,10 +21,3 @@
 
 ```bash
 wget -O /tmp/install.sh [https://github.com/PoTuStoronu222/-DoH/releases/download/DoH/DONE.v10.0.sh](https://github.com/PoTuStoronu222/-DoH/releases/download/DoH/DONE.v10.0.sh) && sh /tmp/install.sh
-
-🔄 Полный откат изменений
-Выполните команду отката и перезагрузите роутер:
-
-Bash
-sh /root/rollback-dns.sh
-reboot
