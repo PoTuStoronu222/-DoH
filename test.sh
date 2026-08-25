@@ -1,8 +1,8 @@
 cat << 'EOF' > /tmp/dns_final.sh
 #!/bin/sh
 echo "============================================================"
-echo "=== OPENWRT DNS v10.4 FINAL PRODUCTION ==="
-echo "=== 6 SmartDNS + Yandex | 4 Safe Bootstrap | Auto-Backup ==="
+echo "=== OPENWRT DNS v10.6 FINAL PRODUCTION ==="
+echo "=== 6 SmartDNS + Yandex | 4 Safe Bootstrap (STRING FIX) ==="
 echo "============================================================"
 
 # ============================================================
@@ -12,7 +12,6 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_ACTUAL="/etc/config/backup-dns-$TIMESTAMP"
 mkdir -p "$BACKUP_ACTUAL"
 
-# Первый бэкап = эталон (навсегда)
 if [ ! -d "/etc/config/backup-original" ]; then
     mkdir -p /etc/config/backup-original
     cp /etc/config/dhcp /etc/config/backup-original/dhcp.bak 2>/dev/null
@@ -25,7 +24,6 @@ else
     echo "[*] Original backup exists, skipping"
 fi
 
-# Текущий бэкап
 cp /etc/config/dhcp "$BACKUP_ACTUAL/dhcp.bak" 2>/dev/null
 cp /etc/config/firewall "$BACKUP_ACTUAL/firewall.bak" 2>/dev/null
 cp /etc/config/https-dns-proxy "$BACKUP_ACTUAL/https-dns-proxy.bak" 2>/dev/null
@@ -34,7 +32,6 @@ cp /etc/config/system "$BACKUP_ACTUAL/system.bak" 2>/dev/null
 ln -sfn "$BACKUP_ACTUAL" /etc/config/backup-pre-dns-v9
 echo "[+] Current backup: $BACKUP_ACTUAL"
 
-# Автоочистка старых (оставить только текущий)
 BACKUP_COUNT=$(ls -d /etc/config/backup-dns-* 2>/dev/null | wc -l)
 if [ "$BACKUP_COUNT" -gt 1 ]; then
     (cd /etc/config && ls -dt backup-dns-* 2>/dev/null | tail -n +2 | xargs rm -rf 2>/dev/null)
@@ -42,7 +39,7 @@ if [ "$BACKUP_COUNT" -gt 1 ]; then
 fi
 
 # ============================================================
-# 0. PRE-CHECKS (совместимость 21.02-25.x)
+# 0. PRE-CHECKS
 # ============================================================
 echo "[0] Environment check..."
 if [ -f /etc/openwrt_release ]; then
@@ -76,7 +73,7 @@ mkdir -p /etc/dnsmasq.d /etc/sysctl.d /etc/hotplug.d/ntp /usr/bin
 echo "[+] OK"
 
 # ============================================================
-# 0b. ОЧИСТКА АРТЕФАКТОВ СТАРЫХ ВЕРСИЙ (v8, v9, v10.0-10.3)
+# 0b. ОЧИСТКА АРТЕФАКТОВ СТАРЫХ ВЕРСИЙ
 # ============================================================
 echo "[0b] Cleaning old artifacts..."
 rm -f /etc/dnsmasq.d/telemetry.conf
@@ -123,7 +120,7 @@ uci commit firewall
 /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null
 
 # ============================================================
-# 3. GO RUNTIME OPTIMIZATION (awk вместо sed для busybox)
+# 3. GO RUNTIME OPTIMIZATION (awk для busybox)
 # ============================================================
 echo "[3] Go optimization..."
 f_tg="/etc/init.d/tg-ws-proxy-go"; f_ts="/etc/init.d/tailscale"
@@ -167,12 +164,15 @@ uci add_list system.ntp.server='129.250.35.250'
 uci commit system
 
 # ============================================================
-# 6. INSTALL https-dns-proxy + curl (с проверкой успеха)
+# 6. INSTALL https-dns-proxy + curl + bind-dig
 # ============================================================
-echo "[6] https-dns-proxy install..."
-if ! command -v https-dns-proxy >/dev/null 2>&1; then
-    [ "$PKG" = "apk" ] && apk update && apk add https-dns-proxy $CA_PKG curl
-    [ "$PKG" = "opkg" ] && opkg update && opkg install https-dns-proxy $CA_PKG curl
+echo "[6] Install packages..."
+if ! command -v https-dns-proxy >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    if [ "$PKG" = "apk" ]; then
+        apk update && apk add https-dns-proxy $CA_PKG curl bind-tools
+    else
+        opkg update && opkg install https-dns-proxy $CA_PKG curl bind-dig
+    fi
 fi
 command -v https-dns-proxy >/dev/null 2>&1 || {
     echo "[!] https-dns-proxy install FAILED"
@@ -180,13 +180,11 @@ command -v https-dns-proxy >/dev/null 2>&1 || {
 }
 
 # ============================================================
-# 7. DoH RESOLVERS (6 SmartDNS + Yandex)
-# 4 SAFE BOOTSTRAP: 2 Яндекса + 2 AdGuard (страхуют друг друга)
-# ВАЖНО: uci delete перед add_list, иначе старые остаются
+# 7. DoH RESOLVERS (КРИТИЧНО: uci set строкой, НЕ add_list!)
+# init.d https-dns-proxy использует config_get - только строка!
 # ============================================================
-echo "[7] DoH resolvers (4 safe bootstrap)..."
+echo "[7] DoH resolvers (STRING bootstrap - init.d fix)..."
 
-# Полная очистка старых конфигов
 while uci -q delete https-dns-proxy.@https-dns-proxy[0]; do :; done
 uci -q delete https-dns-proxy.config 2>/dev/null
 uci set https-dns-proxy.config='main'
@@ -205,14 +203,9 @@ for url in \
     uci set https-dns-proxy.@https-dns-proxy[-1].listen_addr='127.0.0.1'
     uci set https-dns-proxy.@https-dns-proxy[-1].listen_port="$port"
     uci set https-dns-proxy.@https-dns-proxy[-1].resolver_url="$url"
-    # КРИТИЧНО: удаляем старый список перед добавлением
-    uci -q delete https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns 2>/dev/null
-    # Yandex Primary + Secondary
-    uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8'
-    uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.1'
-    # AdGuard Primary + Secondary
-    uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='94.140.14.14'
-    uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='94.140.15.15'
+    uci set https-dns-proxy.@https-dns-proxy[-1].request_timeout='2'
+    # КРИТИЧНО: uci set СТРОКОЙ через запятую (НЕ add_list!)
+    uci set https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15'
 done
 
 # Yandex (порт 5059) — только для .ru/.su/.рф
@@ -220,9 +213,8 @@ uci add https-dns-proxy https-dns-proxy
 uci set https-dns-proxy.@https-dns-proxy[-1].listen_addr='127.0.0.1'
 uci set https-dns-proxy.@https-dns-proxy[-1].listen_port='5059'
 uci set https-dns-proxy.@https-dns-proxy[-1].resolver_url='https://common.dot.dns.yandex.net/dns-query'
-uci -q delete https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns 2>/dev/null
-uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8'
-uci add_list https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.1'
+uci set https-dns-proxy.@https-dns-proxy[-1].request_timeout='2'
+uci set https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns='77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15'
 
 uci commit https-dns-proxy
 
@@ -253,12 +245,10 @@ uci set dhcp.@dnsmasq[0].cachesize='10000'
 uci set dhcp.@dnsmasq[0].dnsforwardmax='1000'
 uci set dhcp.@dnsmasq[0].max_cache_ttl='300'
 
-# ВСЕ сайты через 6 SmartDNS параллельно
 for p in 5053 5054 5055 5056 5057 5058; do
     uci add_list dhcp.@dnsmasq[0].server="127.0.0.1#$p"
 done
 
-# .ru/.su/.рф только через Яндекс
 uci add_list dhcp.@dnsmasq[0].server='/ru/127.0.0.1#5059'
 uci add_list dhcp.@dnsmasq[0].server='/su/127.0.0.1#5059'
 uci add_list dhcp.@dnsmasq[0].server='/xn--p1ai/127.0.0.1#5059'
@@ -272,38 +262,20 @@ uci add_list dhcp.@dnsmasq[0].server='/connectivitycheck.samsungcloud.com/127.0.
 uci commit dhcp
 
 # ============================================================
-# 10. ANTI-BLOCK FILTERS (СТАТИЧЕСКИЙ список - безопасно для DPI)
+# 10. ANTI-BLOCK FILTERS (СТАТИЧЕСКИЙ - безопасно для DPI)
 # ============================================================
 echo "[10] Anti-block filters (STATIC - safe for DPI)..."
 cat << 'ANTIBLOCK' > /etc/dnsmasq.d/anti-block.conf
-# Фиксированный список заглушек (только DNS-подмена провайдеров)
-# НЕ обновляется автоматически - безопасно для сетей с DPI (ТСПУ)!
 no-negcache
-
-# Ростелеком / Центральный Телеграф
 bogus-nxdomain=185.179.189.20
 bogus-nxdomain=195.208.1.1
 bogus-nxdomain=95.167.13.50
-
-# Билайн (ВымпелКом)
 bogus-nxdomain=95.182.120.241
-
-# Дом.ru (ЭР-Телеком)
 bogus-nxdomain=87.241.223.133
-
-# Онлайм / Ростелеком
 bogus-nxdomain=77.37.254.90
-
-# ТТК (ТрансТелеКом)
 bogus-nxdomain=62.33.207.195
-
-# SkyDNS / MNT-NET
 bogus-nxdomain=45.155.204.190
-
-# Cloud4Y / Selectel
 bogus-nxdomain=37.230.192.51
-
-# Нулевые адреса + фильтрующие DoH (127.0.0.1 от них = блокировка)
 bogus-nxdomain=0.0.0.0
 bogus-nxdomain=127.0.0.1
 ANTIBLOCK
@@ -385,21 +357,6 @@ ROLLBACK
 chmod +x /root/rollback-dns.sh
 
 # ============================================================
-# 14. request_timeout (если поддерживается)
-# ============================================================
-echo "[14] Checking request_timeout..."
-timeout_ok=1
-for i in 0 1 2 3 4 5 6; do
-    uci -q set https-dns-proxy.@https-dns-proxy[$i].request_timeout='2' 2>/dev/null || { timeout_ok=0; break; }
-done
-if [ "$timeout_ok" = "1" ]; then
-    uci commit https-dns-proxy
-    echo "[+] request_timeout=2s applied"
-else
-    echo "[!] Not supported (OK - allservers=1 handles this)"
-fi
-
-# ============================================================
 # 15. УТИЛИТА add-stub (с якорем $ для точного поиска)
 # ============================================================
 echo "[15] Installing add-stub utility..."
@@ -415,28 +372,35 @@ ADDSTUB
 chmod +x /usr/bin/add-stub
 
 # ============================================================
-# 16. УТИЛИТА dns-diag (с фильтрацией 127.0.0.1)
+# 16. УТИЛИТА dns-diag (с dig для точной проверки портов)
 # ============================================================
 echo "[16] Installing dns-diag utility..."
 cat << 'DIAG' > /usr/bin/dns-diag
 #!/bin/sh
 echo "=== DNS DIAG ==="
-echo "--- DoH Speed ---"
+
 if command -v dig >/dev/null 2>&1; then
+    echo "--- DoH Ports (dig) ---"
     for item in "5053:Mafioznik" "5054:Comss.one" "5055:Astrakat" "5056:Malw.link" "5057:Comss.ru" "5058:VPPay" "5059:Yandex"; do
         port=$(echo "$item" | cut -d: -f1); name=$(echo "$item" | cut -d: -f2)
-        ip=$(dig @127.0.0.1 -p "$port" chatgpt.com A +short 2>/dev/null | grep -vE '127\.0\.0\.|0\.0\.0\.0' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+        ip=$(dig @127.0.0.1 -p "$port" chatgpt.com A +short +time=2 2>/dev/null | grep -vE '127\.0\.0\.|0\.0\.0\.0' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
         printf "%-12s (port %s) → %s\n" "$name" "$port" "${ip:-NO_ANSWER}"
     done
 else
-    echo "[!] Install dig for port check: apk add bind-dig"
+    echo "[!] dig not available - basic check"
+    for item in "5053:Mafioznik" "5054:Comss.one" "5055:Astrakat" "5056:Malw.link" "5057:Comss.ru" "5058:VPPay" "5059:Yandex"; do
+        port=$(echo "$item" | cut -d: -f1); name=$(echo "$item" | cut -d: -f2)
+        printf "%-12s (port %s) → (install bind-dig)\n" "$name" "$port"
+    done
 fi
+
 echo ""
 echo "--- Resolution (via dnsmasq) ---"
-for dom in ya.ru chatgpt.com youtube.com instagram.com linkedin.com; do
+for dom in ya.ru chatgpt.com youtube.com instagram.com linkedin.com claude.ai gemini.google.com; do
     ip=$(nslookup "$dom" 127.0.0.1 2>/dev/null | grep -vE '127\.0\.0\.|0\.0\.0\.0' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
     printf "%-20s → %s\n" "$dom" "${ip:-NO_ANSWER}"
 done
+
 echo ""
 echo "--- Stubs: $(grep -c bogus-nxdomain /etc/dnsmasq.d/anti-block.conf 2>/dev/null || echo 0) ---"
 echo "--- Backups: $(ls -d /etc/config/backup-dns-* 2>/dev/null | wc -l) ---"
@@ -444,7 +408,7 @@ DIAG
 chmod +x /usr/bin/dns-diag
 
 # ============================================================
-# 17. RESTART SERVICES
+# 17. RESTART SERVICES (killall -9 для надёжности)
 # ============================================================
 echo "[17] Restarting services..."
 /etc/init.d/sysntpd enable 2>/dev/null
@@ -454,7 +418,7 @@ echo "[17] Restarting services..."
 [ -f "$f_tg" ] && /etc/init.d/tg-ws-proxy-go enable 2>/dev/null
 [ -f "$f_ts" ] && /etc/init.d/tailscale enable 2>/dev/null
 
-# Жестко убиваем старые процессы (чтобы подхватили новые конфиги)
+# Жестко убиваем старые процессы
 killall -9 https-dns-proxy 2>/dev/null
 sleep 2
 
@@ -470,7 +434,7 @@ sleep 3
 [ -f "$f_ts" ] && /etc/init.d/tailscale restart 2>/dev/null
 
 # ============================================================
-# 18. VERIFICATION
+# 18. VERIFICATION (исправлен парсинг bootstrap)
 # ============================================================
 echo ""
 echo "============================================================"
@@ -478,8 +442,8 @@ echo "=== VERIFICATION ==="
 echo "============================================================"
 
 echo ""
-echo "--- Bootstrap DNS Check ---"
-ps | grep https-dns-proxy | grep -v grep | head -2 | sed 's/.*-b /Bootstrap: /' | cut -d' ' -f1
+echo "--- Bootstrap DNS Check (ВСЕ 7 процессов) ---"
+ps | grep https-dns-proxy | grep -v grep | awk '{for(i=1;i<=NF;i++) if($i=="-b") print $(i+1)}' | sort -u
 
 echo ""
 echo "--- DoH Speed Test ---"
@@ -535,7 +499,7 @@ echo "❌ No Ans: $no_answer ($((no_answer * 100 / total))%)"
 
 echo ""
 echo "============================================================"
-echo "=== DONE v10.4 FINAL ==="
+echo "=== DONE v10.6 FINAL ==="
 echo "============================================================"
 echo "OpenWrt: $OPENWRT_VERSION | FW: $FW_VERSION | Pkg: $PKG"
 echo ""
@@ -543,15 +507,12 @@ echo "SmartDNS (5053-5058): Mafioznik + Comss.one + Astrakat"
 echo "                      + Malw + Comss.ru + VPPay"
 echo "Yandex RU (5059): only .ru/.su/.рф"
 echo ""
-echo "Bootstrap (4 safe, RU-friendly):"
-echo "  77.88.8.8  (Yandex Primary)"
-echo "  77.88.8.1  (Yandex Secondary)"
-echo "  94.140.14.14 (AdGuard Primary)"
-echo "  94.140.15.15 (AdGuard Secondary)"
+echo "Bootstrap (STRING fix, 4 RU-safe):"
+echo "  77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15"
 echo ""
-echo "📦 Backup:   $BACKUP_ACTUAL"
+echo "📦 Backup:    $BACKUP_ACTUAL"
 echo "🏛️  Original:  /etc/config/backup-original"
-echo "🔄 Rollback: sh /root/rollback-dns.sh"
+echo "🔄 Rollback:  sh /root/rollback-dns.sh"
 echo "🛠️  Tools:     dns-diag, add-stub <IP>"
 echo "============================================================"
 EOF
