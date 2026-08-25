@@ -2,8 +2,8 @@ cat << 'EOF' > /tmp/dns_setup.sh
 #!/bin/sh
 
 echo "============================================================"
-echo "=== OPENWRT FULL SETUP v10.0 FINAL ==="
-echo "=== 6 SmartDNS + Yandex | SSH Edition | Auto-Rollback ==="
+echo "=== OPENWRT FULL SETUP v10.1 FINAL STABLE ==="
+echo "=== 6 SmartDNS + Yandex | Static Anti-Stub | Auto-Rollback ==="
 echo "============================================================"
 echo ""
 
@@ -148,8 +148,6 @@ if ! command -v https-dns-proxy >/dev/null 2>&1; then
     [ "$PKG" = "apk" ] && apk update && apk add https-dns-proxy $CA_PKG
     [ "$PKG" = "opkg" ] && opkg update && opkg install https-dns-proxy $CA_PKG
 fi
-
-# Проверка успешности установки
 command -v https-dns-proxy >/dev/null 2>&1 || { 
     echo "[!] https-dns-proxy install FAILED"
     exit 1 
@@ -157,7 +155,7 @@ command -v https-dns-proxy >/dev/null 2>&1 || {
 
 # ============================================================
 # 7. DoH RESOLVERS (6 SmartDNS + Yandex)
-# Bootstrap: БЕЗ Cloudflare/Google/Quad9
+# Bootstrap: БЕЗ Cloudflare/Google/Quad9 (заблокированы в РФ)
 # ============================================================
 echo "[7] DoH resolvers (6 SmartDNS + Yandex)..."
 while uci -q delete https-dns-proxy.@https-dns-proxy[0]; do :; done
@@ -235,87 +233,43 @@ uci add_list dhcp.@dnsmasq[0].server='/connectivitycheck.samsungcloud.com/127.0.
 uci commit dhcp
 
 # ============================================================
-# 10. ANTI-BLOCK FILTERS (base list)
+# 10. ANTI-BLOCK FILTERS (ТОЛЬКО ФИКСИРОВАННЫЙ СПИСОК)
+# v10.1: Убрано автообновление (оно ломало сайты на DPI-сетях)
 # ============================================================
-echo "[10] Anti-block filters..."
+echo "[10] Anti-block filters (STATIC list - safe for DPI networks)..."
 cat << 'ANTIBLOCK' > /etc/dnsmasq.d/anti-block.conf
+# Фиксированный список IP-заглушек провайдеров (DNS-подмена)
+# НЕ обновляется автоматически - работает на DPI-сетях!
+
 no-negcache
-bogus-nxdomain=45.155.204.190
-bogus-nxdomain=95.182.120.241
-bogus-nxdomain=37.230.192.51
-bogus-nxdomain=77.37.254.90
-bogus-nxdomain=87.241.223.133
-bogus-nxdomain=95.167.13.50
-bogus-nxdomain=62.33.207.195
-bogus-nxdomain=195.208.1.1
+
+# Ростелеком / Центральный Телеграф
 bogus-nxdomain=185.179.189.20
+bogus-nxdomain=195.208.1.1
+bogus-nxdomain=95.167.13.50
+
+# Билайн (ВымпелКом)
+bogus-nxdomain=95.182.120.241
+
+# Дом.ru (ЭР-Телеком)
+bogus-nxdomain=87.241.223.133
+
+# Онлайм / Ростелеком
+bogus-nxdomain=77.37.254.90
+
+# ТТК (ТрансТелеКом)
+bogus-nxdomain=62.33.207.195
+
+# SkyDNS / MNT-NET
+bogus-nxdomain=45.155.204.190
+
+# Cloud4Y / Selectel
+bogus-nxdomain=37.230.192.51
+
+# Нулевые адреса
 bogus-nxdomain=0.0.0.0
 bogus-nxdomain=127.0.0.1
 ANTIBLOCK
-
-# ============================================================
-# 10b. AUTO-UPDATE BOGUS (ISP-aware, IPv4 only, safe parse)
-# ============================================================
-echo "[10b] Auto-update script..."
-cat << 'UPDATESCRIPT' > /usr/bin/update-bogus-dns
-#!/bin/sh
-BOGUS_FILE="/etc/dnsmasq.d/anti-block.conf"
-TEMP_FILE="/tmp/bogus-new.txt"
-OLD_FILE="/etc/dnsmasq.d/.bogus-old"
-
-cat << 'KNOWN' > "$TEMP_FILE"
-no-negcache
-bogus-nxdomain=45.155.204.190
-bogus-nxdomain=95.182.120.241
-bogus-nxdomain=37.230.192.51
-bogus-nxdomain=77.37.254.90
-bogus-nxdomain=87.241.223.133
-bogus-nxdomain=95.167.13.50
-bogus-nxdomain=62.33.207.195
-bogus-nxdomain=195.208.1.1
-bogus-nxdomain=185.179.189.20
-bogus-nxdomain=0.0.0.0
-bogus-nxdomain=127.0.0.1
-KNOWN
-
-TEST_DOMAINS="linkedin.com discord.com instagram.com twitter.com facebook.com"
-
-ISP_DNS_LIST=$(grep -E '^nameserver[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null | awk '{print $2}' | head -n2)
-
-if [ -n "$ISP_DNS_LIST" ]; then
-    for dns in $ISP_DNS_LIST; do
-        for domain in $TEST_DOMAINS; do
-            ip=$(nslookup "$domain" "$dns" 2>/dev/null | awk '/Name:/{flag=1; next} flag' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -v "^$dns$" | tail -n1)
-            if [ -n "$ip" ]; then
-                case "$ip" in
-                    104.*|172.64.*|172.66.*|172.67.*|151.101.*|162.159.*|157.240.*|13.224.*|52.*|18.192.*)
-                        ;;
-                    *)
-                        echo "bogus-nxdomain=$ip" >> "$TEMP_FILE"
-                        ;;
-                esac
-            fi
-        done
-    done
-else
-    logger -t update-bogus-dns "WARNING: ISP IPv4 DNS not found"
-fi
-
-sort -u "$TEMP_FILE" > "$BOGUS_FILE"
-rm -f "$TEMP_FILE"
-
-if [ -f "$OLD_FILE" ] && cmp -s "$BOGUS_FILE" "$OLD_FILE"; then
-    :
-else
-    cp "$BOGUS_FILE" "$OLD_FILE"
-    /etc/init.d/dnsmasq restart >/dev/null 2>&1
-    logger -t update-bogus-dns "Bogus DNS list updated"
-fi
-UPDATESCRIPT
-chmod +x /usr/bin/update-bogus-dns
-
-[ -f /etc/crontabs/root ] || touch /etc/crontabs/root
-grep -q "update-bogus-dns" /etc/crontabs/root || echo "30 4 * * * /bin/sh /usr/bin/update-bogus-dns >/dev/null 2>&1" >> /etc/crontabs/root
 
 # ============================================================
 # 11. SYSCTL TUNING
@@ -363,7 +317,7 @@ echo "[13] Creating rollback script..."
 cat << 'ROLLBACK' > /root/rollback-dns.sh
 #!/bin/sh
 echo "============================================================"
-echo "=== ROLLBACK DNS SETUP ==="
+echo "=== ROLLBACK DNS SETUP v10.1 ==="
 echo "============================================================"
 echo ""
 
@@ -414,7 +368,7 @@ echo "Проверка:"
 echo "  nslookup ya.ru 127.0.0.1"
 echo "  uci show dhcp.@dnsmasq[0].server"
 echo ""
-echo "Для полного сброса рекомендуется: reboot"
+echo "Для полного сброса: reboot"
 ROLLBACK
 chmod +x /root/rollback-dns.sh
 echo "[+] Rollback script: /root/rollback-dns.sh"
@@ -432,6 +386,7 @@ echo "[14] Restarting services..."
 
 /etc/init.d/sysntpd restart 2>/dev/null
 /etc/init.d/https-dns-proxy restart
+sleep 2
 /etc/init.d/dnsmasq stop
 sleep 2
 /etc/init.d/dnsmasq start
@@ -439,11 +394,6 @@ sleep 2
 sleep 3
 [ -f "$f_tg" ] && /etc/init.d/tg-ws-proxy-go restart 2>/dev/null
 [ -f "$f_ts" ] && /etc/init.d/tailscale restart 2>/dev/null
-
-sleep 2
-
-echo "[*] Running initial bogus update..."
-/usr/bin/update-bogus-dns
 
 # ============================================================
 # 15. VERIFICATION
@@ -530,7 +480,7 @@ echo ""
 
 echo ""
 echo "============================================================"
-echo "=== DONE v10.0 FINAL ==="
+echo "=== DONE v10.1 FINAL STABLE ==="
 echo "============================================================"
 echo "OpenWrt: $OPENWRT_VERSION | FW: $FW_VERSION | Pkg: $PKG"
 echo ""
