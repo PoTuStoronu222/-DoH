@@ -67,7 +67,7 @@ nslookup google.com 127.0.0.1
 cat /etc/dnsmasq.d/anti-block.conf
 
 ```
-**4. Посмотреть, когда и какие IP заглушек были пойманы и добавлены
+**4. Посмотреть, когда и какие IP заглушек были пойманы и добавлены:**
 ```bash
    logread | grep update-bogus-dns
 ```
