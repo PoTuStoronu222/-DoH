@@ -10,7 +10,11 @@
 
 Безопасность и 1-click откат: Датированный бэкап UCI-конфигов и генерация скрипта /root/rollback-dns.sh для полного моментального восстановления системы.
 
-запуск через SSH `wget -O /tmp/install.sh https://github.com/PoTuStoronu222/-DoH/releases/download/DoH/DONE.v10.0.sh && sh /tmp/install.sh`
+запуск через SSH 
+`wget -O /tmp/install.sh https://github.com/PoTuStoronu222/-DoH/releases/download/DoH/DONE.v10.0.sh && sh /tmp/install.sh`
 
-откат одной командой `sh /root/rollback-dns.sh`
-после отката `reboot`
+откат одной командой 
+`sh /root/rollback-dns.sh`
+
+после отката 
+`reboot`
