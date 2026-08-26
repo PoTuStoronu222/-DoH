@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX7
+# DNS Manager v6.6-FIX8
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX7"
+VERSION="6.6-FIX8"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -60,7 +60,7 @@ confirm_action() {
     done
 }
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
-clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'; }
+clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'; printf '\033[1;37m'; }
 menu_header() {
     clear_screen
     printf "${C_TITLE}╔════════════════════════════════════════════════════╗${C_NC}\n"
@@ -97,23 +97,23 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX7' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX8' "$DNS_CATALOG" 2>/dev/null; then
         [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FIX7
+# DNSCATVER=6.6-FIX8
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
 # --- Обход блокировок / региональных ограничений ---
-mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.xyz/dns-query|ru/global|verified-current
-astracat|bypass|geo+ads+services|Astracat DNS|https://dns.astracat.ru/dns-query|ru/global|verified-current
+mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
+astracat|bypass|geo+ads+services|Astracat DNS|https://dns.astrakat.ru/dns-query|ru/global|verified-current
 malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|verified-current
 xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|verified-current
 nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
 geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
-comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|review-runtime
-vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|review-runtime
-mafioznik_legacy_com|bypass|legacy|Mafioznik DNS (legacy .com)|https://dns.mafioznik.com/dns-query|ru/global|review-runtime
+comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
+vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|user-confirmed-current
+mafioznik_legacy_com|bypass|legacy|Mafioznik DNS (legacy)|https://dns.mafioznik.com/dns-query|ru/global|user-confirmed-current
 dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
 paesa|bypass|geo+youtube|Paesa DNS|https://dns.paesa.es/dns-query|global|review-runtime
 anon_no|bypass|privacy+geo|Anon.no DNS|https://dns.anon.no/dns-query|norway|review-runtime
@@ -1029,55 +1029,94 @@ show_tests() {
 show_best() {
     [ -s "$TEST_RESULTS" ] || { warn_msg "Сначала выполните тест DNS."; pause; return; }
     clear_screen
-    printf "${C_WHITE}╔══════════════════════════════════════════════╗
-║             ⭐ Что вы ищете?                 ║
-╚══════════════════════════════════════════════╝${C_NC}
-
-"
-    printf "${C_YELLOW}[1]${C_NC} Обход блокировок
-${C_YELLOW}[2]${C_NC} Чистый быстрый DNS
-${C_YELLOW}[3]${C_NC} Безопасность
-${C_YELLOW}[4]${C_NC} Приватность
-${C_YELLOW}[5]${C_NC} Блокировка рекламы
-${C_YELLOW}[6]${C_NC} Семейный
-${C_YELLOW}[7]${C_NC} Социальные сети / сервисы
-${C_YELLOW}[8]${C_NC} Все категории
-${C_GREEN}[Enter]${C_NC} Назад
-
-Выбор: "
+    printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║             ⭐ Что вы хотите настроить?      ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n"
+    printf "${C_YELLOW}[1]${C_NC} Обход блокировок\n"
+    printf "${C_YELLOW}[2]${C_NC} Чистый быстрый DNS\n"
+    printf "${C_YELLOW}[3]${C_NC} Безопасность\n"
+    printf "${C_YELLOW}[4]${C_NC} Приватность\n"
+    printf "${C_YELLOW}[5]${C_NC} Блокировка рекламы\n"
+    printf "${C_YELLOW}[6]${C_NC} Семейный\n"
+    printf "${C_YELLOW}[7]${C_NC} Социальные сети / сервисы\n"
+    printf "${C_YELLOW}[8]${C_NC} Все категории\n"
+    printf "${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "
     safe_read goal
     [ -z "$goal" ] && return
     case "$goal" in
-        1) best_cats="bypass"; best_title="ОБХОД БЛОКИРОВОК";;
-        2) best_cats="clean"; best_title="ЧИСТЫЙ DNS";;
-        3) best_cats="security"; best_title="БЕЗОПАСНОСТЬ";;
-        4) best_cats="privacy"; best_title="ПРИВАТНОСТЬ";;
-        5) best_cats="adblock"; best_title="БЛОКИРОВКА РЕКЛАМЫ";;
-        6) best_cats="family"; best_title="СЕМЕЙНЫЙ DNS";;
-        7) best_cats="social"; best_title="СОЦИАЛЬНЫЕ СЕТИ И СЕРВИСЫ";;
-        8) best_cats="bypass clean security privacy adblock family social regional"; best_title="ВСЕ КАТЕГОРИИ";;
-        *) warn_msg "Неизвестный пункт."; pause; return;;
+        1) menu_best_actions bypass "ОБХОД БЛОКИРОВОК";;
+        2) menu_best_actions clean "ЧИСТЫЙ БЫСТРЫЙ DNS";;
+        3) menu_best_actions security "БЕЗОПАСНОСТЬ";;
+        4) menu_best_actions privacy "ПРИВАТНОСТЬ";;
+        5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ";;
+        6) menu_best_actions family "СЕМЕЙНЫЙ DNS";;
+        7) menu_best_actions social "СОЦИАЛЬНЫЕ СЕТИ И СЕРВИСЫ";;
+        8) menu_best_actions all "ВСЕ КАТЕГОРИИ";;
+        *) warn_msg "Неверный пункт."; pause;;
     esac
-    clear_screen
-    printf "${C_WHITE}╔══════════════════════════════════════════════╗
-║          ⭐ Лучшие варианты: %s
-╚══════════════════════════════════════════════╝${C_NC}
+}
 
-" "$best_title"
-    for c in $best_cats; do
-        case "$c" in bypass) title="ОБХОД БЛОКИРОВОК";; clean) title="ЧИСТЫЕ";; security) title="БЕЗОПАСНОСТЬ";; privacy) title="ПРИВАТНОСТЬ";; adblock) title="БЛОКИРОВКА РЕКЛАМЫ";; family) title="СЕМЕЙНЫЕ";; social) title="СОЦИАЛЬНЫЕ";; regional) title="РЕГИОНАЛЬНЫЕ";; esac
-        printf "${C_YELLOW}--- %s ---${C_NC}
-" "$title"
-        show_best_category "$c" 5 | awk -F'|' '{printf "  %s — %s мс
-", $3, $4}'
-        [ "$c" = bypass ] && { printf "  ${C_WHITE}Доступные обходные DNS автоматически берутся только из реально прошедших тест.${C_NC}
-"; }
-    done
-    printf "
-${C_GREEN}✓ В рекомендации попадают только DNS со статусом «работает».${C_NC}
-"
+auto_fill_slots() {
+    _cat="$1"
+    [ -s "$TEST_RESULTS" ] || { warn_msg "Сначала выполните тест DNS."; pause; return 1; }
+    _pool="$TMP_DIR/auto-slots"
+    : > "$_pool"
+    if [ "$_cat" = all ]; then
+        for _c in bypass clean security privacy adblock family social regional; do
+            grep "|$_c|" "$TEST_RESULTS" 2>/dev/null | grep '|OK$' | sort -t'|' -k4,4n | head -n 1 >> "$_pool"
+        done
+    else
+        grep "|$_cat|" "$TEST_RESULTS" 2>/dev/null | grep '|OK$' | sort -t'|' -k4,4n | head -n 8 > "$_pool"
+    fi
+    [ -s "$_pool" ] || { warn_msg "Нет успешно проверенных DNS в выбранной категории."; pause; return 1; }
+    i=1
+    while IFS='|' read -r _id _cat2 _name _ms _st; do
+        [ -n "$_id" ] || continue
+        case "$i" in
+            1|2|3|4|5|6) eval "SLOT_$i=\"$_id\"";;
+            7) SLOT_RU="$_id";;
+            8) SLOT_RU_2="$_id";;
+        esac
+        i=$((i+1))
+    done < "$_pool"
+    save_config
+    printf "${C_GREEN}✓ Автоматически выбраны лучшие прошедшие тест DNS.${C_NC}\n"
+    for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
+    [ -n "$SLOT_RU" ] && printf "  ${C_WHITE}RU: %s${C_NC}\n" "$(dns_name "$SLOT_RU")"
+    [ -n "$SLOT_RU_2" ] && printf "  ${C_WHITE}RU2: %s${C_NC}\n" "$(dns_name "$SLOT_RU_2")"
     pause
 }
+
+menu_best_actions() {
+    goal="$1"; title="$2"
+    while :; do
+        clear_screen
+        printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║  ⭐ Настройка: %-31s ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n" "$title"
+        printf "${C_YELLOW}[1]${C_NC} ⚡ Автонастройка: подобрать DNS и подготовить применение\n"
+        printf "${C_YELLOW}[2]${C_NC} ⭐ Показать лучшие варианты\n"
+        printf "${C_YELLOW}[3]${C_NC} ⚙ Выбрать DNS вручную\n"
+        printf "${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "
+        safe_read a
+        case "$a" in
+            1)
+                auto_fill_slots "$goal"
+                printf "${C_YELLOW}Все выбранные DNS уже внесены в настройки менеджера.${C_NC}\n"
+                printf "${C_WHITE}Чтобы применить их к роутеру, откройте пункт [9] «Применить выбранное».${C_NC}\n"
+                pause
+                ;;
+            2)
+                clear_screen
+                printf "${C_YELLOW}ТОП-5 — %s${C_NC}\n\n" "$title"
+                show_best_category "$goal" 5 | while IFS='|' read -r _id _cat _name _ms _st; do
+                    printf "  ${C_WHITE}%-34s${C_NC} %s мс\n" "$_name" "$_ms"
+                done
+                pause
+                ;;
+            3) menu_slots; return;;
+            '') return;;
+            *) warn_msg "Неверный пункт."; pause;;
+        esac
+    done
+}
+
 select_slot() {
     slot="$1"; clear_screen
     printf "${C_TITLE}=== Выбор DNS для слота %s ===${C_NC}\n\n" "$slot"
@@ -1102,10 +1141,11 @@ menu_slots() {
         printf "${C_TITLE}=== ⚙ Слоты DNS (6+2) ===${C_NC}\n\n"
         for s in 1 2 3 4 5 6; do eval "v=\${SLOT_$s}"; eval "p=\${PORT_$s}"; printf "${C_YELLOW}[%s]${C_NC} %-24s порт=${C_WHITE}%s${C_NC}\n" "$s" "$(dns_name "$v")" "${p:-авто}"; done
         printf "${C_YELLOW}[7]${C_NC} RU  %-24s порт=${C_WHITE}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "${PORT_RU:-авто}"
-        printf "${C_YELLOW}[8]${C_NC} RU2 %-24s порт=${C_WHITE}%s${C_NC}\n\n" "$(dns_name "$SLOT_RU_2")" "${PORT_RU_2:-авто}"
+        printf "${C_YELLOW}[8]${C_NC} RU2 %-24s порт=${C_WHITE}%s${C_NC}\n" "$(dns_name "$SLOT_RU_2")" "${PORT_RU_2:-авто}"
+        printf "${C_YELLOW}[9]${C_NC} ⚡ Автозаполнение слотов по категории\n\n"
         printf "${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
         [ -z "$c" ] && return
-        case "$c" in 1|2|3|4|5|6) select_slot "$c";; 7) select_slot RU;; 8) select_slot RU_2;; esac
+        case "$c" in 1|2|3|4|5|6) select_slot "$c";; 7) select_slot RU;; 8) select_slot RU_2;; 9) menu_best_actions all "ВСЕ КАТЕГОРИИ";; esac
     done
 }
 menu_bootstrap() {
