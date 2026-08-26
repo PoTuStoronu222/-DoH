@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX10"
+VERSION="6.6-FIX11"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -573,13 +573,19 @@ claim_port_tx() {
     TX_RESERVED_PORTS="$TX_RESERVED_PORTS $p"
     return 0
 }
+FREE_PORT_RESULT=""
 free_port() {
+    FREE_PORT_RESULT=""
     p=5053
     while [ "$p" -le 5099 ]; do
         port_reserved_tx "$p" && { p=$((p+1)); continue; }
         port_used_anywhere "$p"; rc=$?
         [ "$rc" = 2 ] && return 2
-        [ "$rc" = 1 ] && { claim_port_tx "$p"; echo "$p"; return 0; }
+        if [ "$rc" = 1 ]; then
+            claim_port_tx "$p" || { p=$((p+1)); continue; }
+            FREE_PORT_RESULT="$p"
+            return 0
+        fi
         p=$((p+1))
     done
     return 1
@@ -615,7 +621,7 @@ ensure_doh_slot() {
         p="$(printf '%s' "$existing" | cut -d'|' -f2)"
         if port_reserved_tx "$p"; then
             oldp="$p"
-            p="$(free_port)" || { err_msg "Не удалось исправить дубликат порта для $name."; return 1; }
+            free_port || { err_msg "Не удалось исправить дубликат порта для $name."; return 1; }; p="$FREE_PORT_RESULT"
             uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].listen_port=$p" || return 1
             record_own "doh" "$p" "$url" "slot=$slot;name=$name;repair_from=$oldp"
             eval "PORT_$slot=\"$p\""
@@ -647,7 +653,10 @@ ensure_doh_slot() {
         [ "$rc" = 0 ] && p=""
         [ "$rc" = 2 ] && p=""
     fi
-    [ -n "$p" ] || p="$(free_port)"
+    if [ -z "$p" ]; then
+        free_port || return 1
+        p="$FREE_PORT_RESULT"
+    fi
     [ -n "$p" ] || { err_msg "Не удалось выбрать свободный порт для $name."; return 1; }
     port_used_anywhere "$p"; rc=$?; [ "$rc" = 2 ] && { err_msg "Нельзя доказать, что порт $p свободен."; return 1; }
     [ "$rc" = 0 ] && { err_msg "Порт $p уже занят."; return 1; }
@@ -679,11 +688,13 @@ repair_duplicate_own_doh_ports() {
                 claim_port_tx "$p" || return 1
                 continue
             fi
-            newp="$(free_port)" || return 1
+            oldp="$p"
+            free_port || return 1
+            newp="$FREE_PORT_RESULT"
             uci set "https-dns-proxy.@https-dns-proxy[$idx].listen_port=$newp" || return 1
-            record_own "doh" "$newp" "$url" "repair_duplicate_port=$p;section=$idx"
-            log_tx "PLAN" "doh.duplicate.$idx" "MOVE" "OK" "from=$p;to=$newp;url=$url"
-            printf "  ${C_YELLOW}↻ Исправлен старый дубликат: %s → %s${C_NC}\n" "$p" "$newp"
+            record_own "doh" "$newp" "$url" "repair_duplicate_port=$oldp;section=$idx"
+            log_tx "PLAN" "doh.duplicate.$idx" "MOVE" "OK" "from=$oldp;to=$newp;url=$url"
+            printf "  ${C_YELLOW}↻ Исправлен старый дубликат: %s → %s${C_NC}\n" "$oldp" "$newp"
         done <<EOF_DUP
 $(awk -F'|' -v p="$p" '$3=="OURS" && $2==p{print $1"|"$6}' "$DOH_INV")
 EOF_DUP
