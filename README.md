@@ -1,3 +1,5 @@
+# Pre-release
+
 # 🚀 DNS Manager — Hybrid DoH для OpenWrt
 
 **DNS Manager** — менеджер DNS-конфигурации для OpenWrt, построенный вокруг гибридной схемы:
