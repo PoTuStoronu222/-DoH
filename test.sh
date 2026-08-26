@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX9
+# DNS Manager v6.6-FIX10
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX9"
+VERSION="6.6-FIX10"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -101,10 +101,10 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX9' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX10' "$DNS_CATALOG" 2>/dev/null; then
         [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FIX9
+# DNSCATVER=6.6-FIX10
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
@@ -319,7 +319,7 @@ disc_listeners() {
     fi
 }
 disc_dns() {
-    DNSMASQ_RUN="no"; pgrep -x dnsmasq >/dev/null 2>&1 && DNSMASQ_RUN="yes"
+    DNSMASQ_RUN="no"; if /etc/init.d/dnsmasq status >/dev/null 2>&1; then DNSMASQ_RUN="yes"; elif pgrep -x dnsmasq >/dev/null 2>&1; then DNSMASQ_RUN="yes"; fi
     DOH_INV="$TMP_DIR/doh_inventory"; : > "$DOH_INV"
     DOH_TOTAL=0; DOH_OURS=0; DOH_FOREIGN=0; DOH_UNKNOWN=0
     FORCE_DNS="$(uci -q get https-dns-proxy.config.force_dns 2>/dev/null)"
@@ -548,7 +548,7 @@ menu_ntp() {
 
 # ----- DNS ownership and ports -----
 find_own_doh_by_url() {
-    awk -F'|' -v u="$(normalize_url "$1")" '$6==u && $3=="OURS"{print $1"|"$2;exit}' "$DOH_INV"
+    awk -F'|' -v u="$(normalize_url "$1")" '$6==u && $3=="OURS"{print $1"|"$2"|"$6;exit}' "$DOH_INV"
 }
 find_any_doh_by_url() {
     awk -F'|' -v u="$(normalize_url "$1")" '$6==u{print $1"|"$2"|"$3"|"$4"|"$5;exit}' "$DOH_INV"
@@ -611,7 +611,18 @@ ensure_doh_slot() {
 
     existing="$(find_own_doh_by_url "$url")"
     if [ -n "$existing" ]; then
+        sec_idx="$(printf '%s' "$existing" | cut -d'|' -f1)"
         p="$(printf '%s' "$existing" | cut -d'|' -f2)"
+        if port_reserved_tx "$p"; then
+            oldp="$p"
+            p="$(free_port)" || { err_msg "Не удалось исправить дубликат порта для $name."; return 1; }
+            uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].listen_port=$p" || return 1
+            record_own "doh" "$p" "$url" "slot=$slot;name=$name;repair_from=$oldp"
+            eval "PORT_$slot=\"$p\""
+            printf "  ${C_YELLOW}↻ %s: конфликт порта %s исправлен → %s${C_NC}\n" "$name" "$oldp" "$p"
+            return 0
+        fi
+        claim_port_tx "$p" || { err_msg "Порт $p уже закреплён за другим выбранным слотом."; return 1; }
         eval "PORT_$slot=\"$p\""
         printf "  ${C_WHITE}= %s уже наш, порт %s${C_NC}\n" "$name" "$p"
         return 0
@@ -653,6 +664,30 @@ ensure_doh_slot() {
     record_own "doh" "$p" "$url" "slot=$slot;name=$name"
     eval "PORT_$slot=\"$p\""
     printf "  ${C_GREEN}+ %s → 127.0.0.1:%s${C_NC}\n" "$name" "$p"
+}
+
+repair_duplicate_own_doh_ports() {
+    [ -s "$DOH_INV" ] || return 0
+    dup_ports="$TMP_DIR/dup-own-ports"
+    awk -F'|' '$3=="OURS" && $2!=""{cnt[$2]++} END{for(p in cnt) if(cnt[p]>1) print p}' "$DOH_INV" > "$dup_ports"
+    [ -s "$dup_ports" ] || return 0
+    while IFS= read -r p; do
+        first=1
+        while IFS='|' read -r idx url; do
+            if [ "$first" -eq 1 ]; then
+                first=0
+                claim_port_tx "$p" || return 1
+                continue
+            fi
+            newp="$(free_port)" || return 1
+            uci set "https-dns-proxy.@https-dns-proxy[$idx].listen_port=$newp" || return 1
+            record_own "doh" "$newp" "$url" "repair_duplicate_port=$p;section=$idx"
+            log_tx "PLAN" "doh.duplicate.$idx" "MOVE" "OK" "from=$p;to=$newp;url=$url"
+            printf "  ${C_YELLOW}↻ Исправлен старый дубликат: %s → %s${C_NC}\n" "$p" "$newp"
+        done <<EOF_DUP
+$(awk -F'|' -v p="$p" '$3=="OURS" && $2==p{print $1"|"$6}' "$DOH_INV")
+EOF_DUP
+    done < "$dup_ports"
 }
 
 get_dnsmasq_section() {
@@ -815,7 +850,8 @@ apply_ntp_if_needed() {
 
 verify_after_apply() {
     sleep 2
-    pgrep -x dnsmasq >/dev/null 2>&1 || { err_msg "dnsmasq не запущен."; return 1; }
+    if /etc/init.d/dnsmasq status >/dev/null 2>&1; then DNSMASQ_RUN="yes"; elif pgrep -x dnsmasq >/dev/null 2>&1; then DNSMASQ_RUN="yes"; else DNSMASQ_RUN="no"; fi
+    [ "$DNSMASQ_RUN" = yes ] || { err_msg "dnsmasq не запущен после перезапуска и ожидания."; return 1; }
     if [ "$DOH_TOTAL" -gt 0 ]; then
         pgrep -f 'https-dns-proxy' >/dev/null 2>&1 || { err_msg "https-dns-proxy не запущен."; return 1; }
         for p in "$PORT_1" "$PORT_2" "$PORT_3" "$PORT_4" "$PORT_5" "$PORT_6" "$PORT_RU" "$PORT_RU_2"; do
@@ -893,6 +929,7 @@ apply_settings() {
     printf "  DNS: будут добавлены только отсутствующие записи.\n"
     printf "  NTP: отдельная IP-first секция DNS Manager.\n"
     printf "  Дополнительные функции: изменяются только выбранные пользователем модули.\n\n"
+    repair_duplicate_own_doh_ports || { err_msg "Не удалось исправить существующие дубли DoH-портов."; tx_restore_on_failure; return 1; }
     for s in 1 2 3 4 5 6; do eval "v=\${SLOT_$s}"; ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; tx_restore_on_failure; return 1; }; done
     ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
     ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
