@@ -294,6 +294,7 @@ EOF_CFG
 
 # ----- Discovery -----
 disc_system() {
+    HAS_DNSMASQ="no"; command -v dnsmasq >/dev/null 2>&1 && HAS_DNSMASQ="yes"
     SYS_FW="fw3"
     if command -v fw4 >/dev/null 2>&1 || [ -x /sbin/fw4 ] || [ -x /usr/sbin/fw4 ] || [ -f /usr/share/fw4/main.uc ] || [ -f /usr/share/fw4/helpers.sh ]; then
         SYS_FW="fw4"
@@ -1738,26 +1739,92 @@ menu_extras() {
         save_config
     done
 }
+
+ensure_dependencies(){
+    missing=""
+    [ "$HAS_CURL" = yes ] || missing="$missing curl"
+    [ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
+    [ "$HAS_HDP" = yes ] || missing="$missing https-dns-proxy"
+
+    CA_OK=no
+    [ -s /etc/ssl/certs/ca-certificates.crt ] && CA_OK=yes
+    if [ "$CA_OK" != yes ]; then
+        if command -v apk >/dev/null 2>&1; then
+            apk info -e ca-certificates >/dev/null 2>&1 && CA_OK=yes
+            apk info -e ca-bundle >/dev/null 2>&1 && CA_OK=yes
+        elif command -v opkg >/dev/null 2>&1; then
+            opkg status ca-certificates 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+            opkg status ca-bundle 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+        fi
+    fi
+    [ "$CA_OK" = yes ] || missing="$missing ca-certificates"
+    printf '%s\n' "$missing"
+}
+
 menu_install() {
     clear_screen
-    printf "${C_TITLE}=== 📦 Установка недостающего ===${C_NC}\n\n"
+    printf "${C_WHITE}╔════════════════════════════════════════════════════╗\n"
+    printf "║              📦 Компоненты DNS Manager            ║\n"
+    printf "╚════════════════════════════════════════════════════╝${C_NC}\n\n"
+
+    printf "  curl              : %s\n" "$(state_word "$HAS_CURL")"
+    printf "  dig               : %s\n" "$(state_word "$HAS_DIG")"
+    printf "  https-dns-proxy   : %s\n" "$(state_word "$HAS_HDP")"
+
+    CA_OK=no
+    [ -s /etc/ssl/certs/ca-certificates.crt ] && CA_OK=yes
+    if [ "$CA_OK" != yes ]; then
+        if command -v apk >/dev/null 2>&1; then
+            apk info -e ca-certificates >/dev/null 2>&1 && CA_OK=yes
+            apk info -e ca-bundle >/dev/null 2>&1 && CA_OK=yes
+        elif command -v opkg >/dev/null 2>&1; then
+            opkg status ca-certificates 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+            opkg status ca-bundle 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+        fi
+    fi
+    printf "  CA-сертификаты    : %s\n" "$(state_word "$CA_OK")"
+    printf "  dnsmasq           : %s\n\n" "$(state_word "$HAS_DNSMASQ")"
+
     need=""
     [ "$HAS_CURL" = no ] && need="$need curl"
     [ "$HAS_DIG" = no ] && need="$need bind-dig"
     [ "$HAS_HDP" = no ] && need="$need https-dns-proxy"
-    [ -z "$need" ] && { ok_msg "Всё нужное уже установлено."; pause; return; }
-    printf "Не хватает:%s\n" "$need"
-    if confirm_action "Установить недостающие пакеты сейчас?"; then
+    [ "$CA_OK" = no ] && need="$need ca-certificates"
+    [ "$HAS_DNSMASQ" = no ] && need="$need dnsmasq"
+
+    if [ -z "$need" ]; then
+        ok_msg "Все обязательные компоненты уже установлены."
+        pause
+        return
+    fi
+
+    printf "${C_YELLOW}Необходимо установить:${C_NC}\n"
+    for pkg in $need; do
+        printf "  ${C_PINK}↻${C_NC} %s\n" "$pkg"
+    done
+    printf "\n"
+
+    if confirm_action "Установить недостающие компоненты сейчас?"; then
         if [ "$PKG_MGR" = apk ]; then
-            apk update && apk add --no-cache $need
+            apk update && apk add $need
         else
-            [ "$need" != *"bind-dig"* ] && : 
             opkg update && opkg install $need
         fi
+
         run_discovery
+
+        if [ "$HAS_CURL" = yes ] && [ "$HAS_DIG" = yes ] && \
+           [ "$HAS_HDP" = yes ] && [ "$HAS_DNSMASQ" = yes ]; then
+            ok_msg "Обязательные компоненты установлены."
+        else
+            warn_msg "После установки остались недостающие компоненты. Проверьте состояние."
+        fi
+    else
+        info_msg "Установка отменена."
     fi
     pause
 }
+
 menu_status() {
     clear_screen
     printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║             📋 Состояние и журнал            ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n"
@@ -1842,6 +1909,20 @@ quick_max_bypass() {
         pause
     fi
 }
+
+dependency_preflight(){
+    run_discovery >/dev/null 2>&1 || true
+    title "📦 ПРОВЕРКА ЗАВИСИМОСТЕЙ"
+    printf '  curl              : '; bool_text "$HAS_CURL"; printf '\n'
+    printf '  dig               : '; bool_text "$HAS_DIG"; printf '\n'
+    printf '  https-dns-proxy   : '; bool_text "$HAS_HDP"; printf '\n'
+    if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
+        printf '  CA-сертификаты    : %b✓ ВКЛ%b\n' "$C_GREEN" "$C_RESET"
+    else
+        printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_RESET"
+    fi
+}
+
 
 main_menu() {
     while :; do
