@@ -1,12 +1,12 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX5
+# DNS Manager v6.6-FIX6
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
 #
 # Функции:
-#   - DNS/DoH каталог 69 проверенных опубликованных endpoint'ов
+#   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
 #   - NTP IP-first: Cloudflare / NIST / Google отдельным профилем /
 #     ВНИИФТРИ (Москва + регионы)
 #   - Bootstrap DNS
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX5"
+VERSION="6.6-FIX6"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -47,6 +47,30 @@ ok_msg() { log_msg "OK $*"; printf "${C_GREEN}[✓] %s${C_NC}\n" "$*"; }
 warn_msg() { log_msg "WARN $*"; printf "${C_YELLOW}[!] %s${C_NC}\n" "$*"; }
 err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
+normalize_menu_key() {
+    _k="$1"
+    case "$_k" in
+        i|I|ш|Ш) printf 'I' ;;
+        r|R|к|К) printf 'R' ;;
+        q|Q|й|Й) printf 'Q' ;;
+        d|D|д|Д|y|Y|н|Н) printf 'YES' ;;
+        n|N|т|Т) printf 'NO' ;;
+        *) printf '%s' "$_k" ;;
+    esac
+}
+read_yes_no() {
+    _ans=
+    while :; do
+        printf '%s [Д/Н]: ' "$1"
+        safe_read _ans
+        case "$(normalize_menu_key "$_ans")" in
+            YES) return 0 ;;
+            NO) return 1 ;;
+            '') return 1 ;;
+            *) printf '%s\n' "${C_YELLOW}Введите Д или Н (также принимаются D/N и Y/N).${C_NC}" ;;
+        esac
+    done
+}
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
 clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'; }
 menu_header() {
@@ -59,8 +83,8 @@ menu_header() {
 # ----- Bootstrap self-install. No config change here. -----
 if [ ! -f "$0" ] || [ "$0" = "sh" ] || [ "$0" = "/bin/sh" ] || [ "$0" = "/bin/ash" ]; then
     mkdir -p "$(dirname "$MANAGER_PATH")" 2>/dev/null
-    if wget -q -O "$MANAGER_PATH" "https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/test.sh" 2>/dev/null ||
-       curl -fsSL "https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/test.sh" -o "$MANAGER_PATH" 2>/dev/null; then
+    if wget -q -O "$MANAGER_PATH" "https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/dns-manager-v6.6-FIX6.sh" 2>/dev/null ||
+       curl -fsSL "https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/dns-manager-v6.6-FIX6.sh" -o "$MANAGER_PATH" 2>/dev/null; then
         chmod +x "$MANAGER_PATH" 2>/dev/null
         exec "$MANAGER_PATH"
     fi
@@ -85,12 +109,25 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX6' "$DNS_CATALOG" 2>/dev/null; then
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-R2
+# DNSCATVER=6.6-FIX6
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
+# --- Обход блокировок / региональных ограничений ---
+mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.xyz/dns-query|ru/global|verified-current
+astracat|bypass|geo+ads+services|Astracat DNS|https://dns.astracat.ru/dns-query|ru/global|verified-current
+malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|verified-current
+xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|verified-current
+nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
+geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
+comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|review-runtime
+vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|review-runtime
+mafioznik_legacy_com|bypass|legacy|Mafioznik DNS (legacy .com)|https://dns.mafioznik.com/dns-query|ru/global|review-runtime
+dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
+paesa|bypass|geo+youtube|Paesa DNS|https://dns.paesa.es/dns-query|global|review-runtime
+anon_no|bypass|privacy+geo|Anon.no DNS|https://dns.anon.no/dns-query|norway|review-runtime
 cloudflare_clean|clean|unfiltered|Cloudflare|https://cloudflare-dns.com/dns-query|global|verified-published-current
 cloudflare_security|security|malware|Cloudflare Security|https://security.cloudflare-dns.com/dns-query|global|verified-published-current
 cloudflare_family|family|malware+adult|Cloudflare Family|https://family.cloudflare-dns.com/dns-query|global|verified-published-current
@@ -162,9 +199,9 @@ hagezi_ctif|security|threat-only|HaGeZi CTIF|https://ctif.hagezi.org/dns-query|g
 dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
 EOF_DNS
     fi
-    if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=' "$NTP_CATALOG" 2>/dev/null; then
+    if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FIX6' "$NTP_CATALOG" 2>/dev/null; then
         cat > "$NTP_CATALOG" <<'EOF_NTP'
-# NTPCATVER=6.6-FINAL
+# NTPCATVER=6.6-FIX6
 # ID|CATEGORY|NAME|IPV4|IPV6|MODE|LEAP|STATUS
 cf_ip|global|Cloudflare|162.159.200.1 162.159.200.123|2606:4700:f1::1 2606:4700:f1::123|ip-first|no-smear|verified-current
 nist_ip|global|NIST|129.6.15.28 129.6.15.29 129.6.15.30 129.6.15.27 129.6.15.26|2610:20:6f15:15::27 2610:20:6f15:15::26|ip-first|no-smear|verified-current
@@ -178,9 +215,9 @@ pool_global|pool|NTP Pool Global||||hostname|no-smear|runtime-check
 pool_ru|pool|NTP Pool Russia||||hostname|no-smear|runtime-check
 EOF_NTP
     fi
-    if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
+    if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FIX6-FIX6' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
         cat > "$BOOTSTRAP_CATALOG" <<'EOF_BOOT'
-# BOOTSTRAPCATVER=6.6
+# BOOTSTRAPCATVER=6.6-FIX6
 # ID|PROVIDER|IPV4|IPV6|ROLE|STATUS
 yandex|Yandex|77.88.8.8,77.88.8.1|2a02:6b8::feed:0ff,2a02:6b8:0:1::feed:0ff|bootstrap|verified-current
 adguard|AdGuard|94.140.14.14,94.140.15.15|2a10:50c0::ad1:ff,2a10:50c0::ad2:ff|bootstrap|verified-current
@@ -193,9 +230,9 @@ controld|Control D|76.76.2.0,76.76.10.0|2606:1a40::0,2606:1a40:1::0|bootstrap|ve
 mullvad|Mullvad|194.242.2.2,194.242.2.3|2a07:e340::2,2a07:e340::3|bootstrap|verified-current
 EOF_BOOT
     fi
-    if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=' "$BOGUS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FIX6-FIX6' "$BOGUS_CATALOG" 2>/dev/null; then
         cat > "$BOGUS_CATALOG" <<'EOF_BOGUS'
-# BOGUSCATVER=6.6
+# BOGUSCATVER=6.6-FIX6
 # ID|TYPE|IP|DESCRIPTION|CONFIDENCE|STATUS
 rtk_95_167|hijack|95.167.13.50|Ростелеком: исторически подтвержденная заглушка|high|historical-confirmed
 ttk_62_33|hijack|62.33.207.195|ТТК: исторически указанный адрес|medium|historical-confirmed
@@ -490,7 +527,7 @@ menu_ntp() {
     printf "4) ВНИИФТРИ все регионы — 12 IP\n"
     printf "5) Google — 4 IP, отдельный leap-smear профиль\n"
     printf "6) Текущий профиль: %s\n" "$NTP_PRESET"
-    printf "Enter) Назад\n\nВыбор: "; safe_read c
+    printf "${C_GREEN}[Enter]${C_NC} Назад  |  Выбор: "; safe_read c
     case "$c" in
         1) NTP_PRESET=cf_ip;;
         2) NTP_PRESET=nist_ip;;
@@ -500,8 +537,7 @@ menu_ntp() {
         *) return;;
     esac
     save_config
-    printf "\nПрименить IP-резерв NTP сейчас? (y/n): "; safe_read a
-    case "$a" in y|Y|д|Д) apply_ntp_ip_fallback; pause;; esac
+    if read_yes_no "Применить IP-резерв NTP сейчас?"; then apply_ntp_ip_fallback; pause; fi
 }
 
 # ----- DNS ownership and ports -----
@@ -570,11 +606,7 @@ ensure_doh_slot() {
         run="$(printf '%s' "$existing" | cut -d'|' -f5)"
         if [ "$run" = yes ] && { [ "$addr" = 127.0.0.1 ] || [ "$addr" = 0.0.0.0 ] || [ "$addr" = "::1" ] || [ "$addr" = "::" ]; }; then
             printf "  ${C_YELLOW}= найден существующий %s (%s) на %s:%s.${C_NC}\n" "$name" "$owner" "$addr" "$p"
-            printf "  Переиспользовать его вместо создания второго экземпляра? (y/n): "; safe_read _reuse
-            case "$_reuse" in
-                y|Y|д|Д) eval "PORT_$slot=\"$p\""; log_tx "PLAN" "doh.$id" "REUSE" "USER" "owner=$owner;port=$p"; return 0 ;;
-                *) warn_msg "Не переиспользую чужой/неизвестный DoH автоматически."; return 1 ;;
-            esac
+            if read_yes_no "Переиспользовать найденный DoH вместо создания второго?"; then eval "PORT_$slot=\"$p\""; log_tx "PLAN" "doh.$id" "REUSE" "USER" "owner=$owner;port=$p"; return 0; else warn_msg "Не переиспользую чужой/неизвестный DoH."; return 1; fi
         fi
         warn_msg "$name найден, но его нельзя безопасно переиспользовать (owner=$owner addr=$addr running=$run)."
         return 1
@@ -659,8 +691,7 @@ reconcile_dnsmasq() {
     if [ -n "$SLOT_1$SLOT_2$SLOT_3$SLOT_4$SLOT_5$SLOT_6$SLOT_RU$SLOT_RU_2" ]; then
         cur_nr="$(uci -q get "dhcp.$sec.noresolv" 2>/dev/null)"
         if [ "$cur_nr" != 1 ]; then
-            printf "${C_YELLOW}Включить noresolv=1 для выбранной DoH-цепочки? (y/n): ${C_NC}"; safe_read _nr
-            case "$_nr" in y|Y|д|Д) uci set "dhcp.$sec.noresolv=1"; record_own "dnsmasq" "option" "noresolv=1" "section=$sec";; esac
+            if read_yes_no "Включить noresolv=1 для выбранной DoH-цепочки?"; then uci set "dhcp.$sec.noresolv=1"; record_own "dnsmasq" "option" "noresolv=1" "section=$sec"; fi
         fi
     fi
     uci commit dhcp
@@ -786,8 +817,7 @@ apply_settings() {
     clear_screen
     printf "${C_TITLE}=== ⚡ Применение ===${C_NC}\n\n"
     printf "1. Роутер будет прочитан заново.\n2. Чужие/неизвестные объекты остаются как есть.\n3. Свои объекты могут быть добавлены/обновлены.\n4. Общий https-dns-proxy может кратко перезапуститься.\n\n"
-    printf "Продолжить? (y/n): "; safe_read c
-    case "$c" in y|Y|д|Д) ;; *) return;; esac
+    read_yes_no "Продолжить применение?" || return
 
     run_discovery
     load_config
@@ -795,8 +825,7 @@ apply_settings() {
 
     if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
         warn_msg "Обнаружены чужие/неизвестные DoH: чужих=$DOH_FOREIGN неизвестных=$DOH_UNKNOWN."
-        printf "Перезапуск общей службы допустим? (y/n): "; safe_read c2
-        case "$c2" in y|Y|д|Д) ;; *) return;; esac
+        read_yes_no "Разрешить краткий перезапуск общей службы https-dns-proxy?" || return
     fi
 
     printf "\n${C_WHITE}План:${C_NC}\n"
@@ -814,8 +843,7 @@ apply_settings() {
         printf "
 ${C_YELLOW}NTP IP-fallback включён: он нужен для ранней синхронизации времени без DNS.${C_NC}
 "
-        printf "Применить IP-профиль NTP вместе с DNS? (y/n): "; safe_read _ntp_apply
-        case "$_ntp_apply" in y|Y|д|Д) apply_ntp_if_needed || return 1;; esac
+        if read_yes_no "Применить IP-профиль NTP вместе с DNS?"; then apply_ntp_if_needed || return 1; fi
     fi
     [ "$BLOCK_QUIC" = 1 ] && apply_quic
     [ "$MTU_FIX" = 1 ] && { uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; }
@@ -1010,13 +1038,53 @@ show_tests() {
 show_best() {
     [ -s "$TEST_RESULTS" ] || { warn_msg "Сначала выполните тест DNS."; pause; return; }
     clear_screen
-    printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║       ⭐ Лучшие DNS для этого роутера        ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n"
-    for c in bypass clean security privacy adblock family social regional; do
-        case "$c" in bypass) title="ОБХОД";; clean) title="ЧИСТЫЕ";; security) title="БЕЗОПАСНОСТЬ";; privacy) title="ПРИВАТНОСТЬ";; adblock) title="БЛОКИРОВКА РЕКЛАМЫ";; family) title="СЕМЕЙНЫЕ";; social) title="СОЦИАЛЬНЫЕ СЕТИ";; regional) title="РЕГИОНАЛЬНЫЕ";; esac
-        printf "${C_YELLOW}--- %s ---${C_NC}\n" "$title"
-        show_best_category "$c" 3 | awk -F'|' '$4 >= 0 {printf "  %-24s %5sms\n", $3, $4}'
+    printf "${C_WHITE}╔══════════════════════════════════════════════╗
+║             ⭐ Что вы ищете?                 ║
+╚══════════════════════════════════════════════╝${C_NC}
+
+"
+    printf "${C_YELLOW}[1]${C_NC} Обход блокировок
+${C_YELLOW}[2]${C_NC} Чистый быстрый DNS
+${C_YELLOW}[3]${C_NC} Безопасность
+${C_YELLOW}[4]${C_NC} Приватность
+${C_YELLOW}[5]${C_NC} Блокировка рекламы
+${C_YELLOW}[6]${C_NC} Семейный
+${C_YELLOW}[7]${C_NC} Социальные сети / сервисы
+${C_YELLOW}[8]${C_NC} Все категории
+${C_GREEN}[Enter]${C_NC} Назад
+
+Выбор: "
+    safe_read goal
+    [ -z "$goal" ] && return
+    case "$goal" in
+        1) best_cats="bypass"; best_title="ОБХОД БЛОКИРОВОК";;
+        2) best_cats="clean"; best_title="ЧИСТЫЙ DNS";;
+        3) best_cats="security"; best_title="БЕЗОПАСНОСТЬ";;
+        4) best_cats="privacy"; best_title="ПРИВАТНОСТЬ";;
+        5) best_cats="adblock"; best_title="БЛОКИРОВКА РЕКЛАМЫ";;
+        6) best_cats="family"; best_title="СЕМЕЙНЫЙ DNS";;
+        7) best_cats="social"; best_title="СОЦИАЛЬНЫЕ СЕТИ И СЕРВИСЫ";;
+        8) best_cats="bypass clean security privacy adblock family social regional"; best_title="ВСЕ КАТЕГОРИИ";;
+        *) warn_msg "Неизвестный пункт."; pause; return;;
+    esac
+    clear_screen
+    printf "${C_WHITE}╔══════════════════════════════════════════════╗
+║          ⭐ Лучшие варианты: %s
+╚══════════════════════════════════════════════╝${C_NC}
+
+" "$best_title"
+    for c in $best_cats; do
+        case "$c" in bypass) title="ОБХОД БЛОКИРОВОК";; clean) title="ЧИСТЫЕ";; security) title="БЕЗОПАСНОСТЬ";; privacy) title="ПРИВАТНОСТЬ";; adblock) title="БЛОКИРОВКА РЕКЛАМЫ";; family) title="СЕМЕЙНЫЕ";; social) title="СОЦИАЛЬНЫЕ";; regional) title="РЕГИОНАЛЬНЫЕ";; esac
+        printf "${C_YELLOW}--- %s ---${C_NC}
+" "$title"
+        show_best_category "$c" 5 | awk -F'|' '{printf "  %s — %s мс
+", $3, $4}'
+        [ "$c" = bypass ] && { printf "  ${C_WHITE}Доступные обходные DNS автоматически берутся только из реально прошедших тест.${C_NC}
+"; }
     done
-    printf "\n${C_YELLOW}✓ В рекомендации попадают только ответы со статусом «работает».${C_NC}\n"
+    printf "
+${C_GREEN}✓ В рекомендации попадают только DNS со статусом «работает».${C_NC}
+"
     pause
 }
 select_slot() {
@@ -1056,7 +1124,7 @@ menu_bootstrap() {
     printf "${C_YELLOW}[1]${C_NC} Независимые: Cloudflare + Yandex + AdGuard + Quad9 + Google\n"
     printf "${C_YELLOW}[2]${C_NC} Cloudflare + Yandex\n"
     printf "${C_YELLOW}[3]${C_NC} Только Cloudflare\n"
-    printf "${C_YELLOW}[4]${C_NC} Ввести свои IPv4 через запятую\n${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
+    printf "${C_YELLOW}[4]${C_NC} Ввести свои IPv4  ${C_GREEN}[Enter]${C_NC} Назад  |  Выбор: "; safe_read c
     case "$c" in
         1) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,9.9.9.9,149.112.112.112,8.8.8.8,8.8.4.4";;
         2) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1";;
@@ -1106,8 +1174,7 @@ menu_install() {
     [ "$HAS_HDP" = no ] && need="$need https-dns-proxy"
     [ -z "$need" ] && { ok_msg "Всё нужное уже установлено."; pause; return; }
     printf "Не хватает:%s\n" "$need"
-    printf "Установить сейчас? (y/n): "; safe_read c
-    case "$c" in y|Y|д|Д)
+    if read_yes_no "Установить недостающие пакеты сейчас?"; then
         if [ "$PKG_MGR" = apk ]; then
             apk update && apk add --no-cache $need
         else
@@ -1115,8 +1182,7 @@ menu_install() {
             opkg update && opkg install $need
         fi
         run_discovery
-        ;;
-    esac
+    fi
     pause
 }
 menu_status() {
@@ -1198,7 +1264,7 @@ main_menu() {
         case "$c" in
             1) show_map;; 2) test_dns_catalog; show_tests;; 3) show_best;; 4) menu_slots;;
             5) menu_bootstrap;; 6) menu_ntp;; 7) menu_extras;; 8) menu_status;; 9) apply_settings;;
-            I|i) menu_install;; R|r|К|к) rollback_ours;;
+            I) menu_install;; R) rollback_ours;;
             *) warn_msg "Неизвестный пункт. Используйте номер меню или Enter для выхода."; pause;;
         esac
     done
