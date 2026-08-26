@@ -1,18 +1,15 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v3.9.1-FINAL
-# Цвета с жёстким fallback | Чистый сток | Анти-дубли
+# DNS Manager v3.9.2-FINAL
+# Исправлен тест, сток, статус, bootstrap меню
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
 SELF_SOURCE="$0"
-CATVER="3.9.1"
+CATVER="3.9.2"
 
-# ============================================================
-# ЦВЕТА: tput → ANSI → пусто (тройной fallback)
-# ============================================================
+# === ЦВЕТА ===
 init_colors() {
-    # Попытка 1: tput
     if command -v tput >/dev/null 2>&1; then
         _tc=$(tput colors 2>/dev/null)
         if [ -n "$_tc" ] && [ "$_tc" -ge 8 ] 2>/dev/null; then
@@ -25,21 +22,15 @@ init_colors() {
             N=$(tput sgr0 2>/dev/null)
         fi
     fi
-    # Попытка 2: если tput не дал результат → ANSI
     if [ -z "$N" ]; then
-        R='\033[0;31m'
-        G='\033[0;32m'
-        Y='\033[1;33m'
-        B='\033[0;34m'
-        C='\033[0;36m'
-        W='\033[1;37m'
-        N='\033[0m'
+        R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
+        B='\033[0;34m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
     fi
 }
 
 install_self() {
     [ "$SELF_SOURCE" = "$MANAGER_PATH" ] && return 0
-    echo "=== Установка DNS Manager v3.9.1 ==="
+    echo "=== Установка DNS Manager v3.9.2 ==="
     if command -v apk >/dev/null 2>&1; then PKG="apk"
     elif command -v opkg >/dev/null 2>&1; then PKG="opkg"
     else echo "[!] Нет пакетного менеджера"; exit 1; fi
@@ -73,37 +64,26 @@ install_self() {
 CONFIG_FILE="/root/.dns-manager.conf"
 DNS_CATALOG="/root/.dns-catalog.conf"
 TEST_RESULTS="/root/.dns-test-results.conf"
-VERSION="3.9.1-FINAL"
+VERSION="3.9.2-FINAL"
 
-# ============================================================
-# ОЧИСТКА БУФЕРА STDIN (надёжная для всех BusyBox)
-# ============================================================
 flush_stdin() {
-    # Метод 1: timeout + dd (самый надёжный)
     if command -v timeout >/dev/null 2>&1; then
         timeout 0.1 dd if=/dev/stdin of=/dev/null bs=512 count=1 2>/dev/null
     else
-        # Метод 2: read с таймаутом (fallback)
         while read -t 0 _flush_dummy 2>/dev/null; do :; done
     fi
 }
 
-safe_read() {
-    flush_stdin
-    read -r "$@"
-}
+safe_read() { flush_stdin; read -r "$@"; }
 
 clear_screen() {
-    if command -v clear >/dev/null 2>&1; then
-        clear
-    else
-        printf '\033[2J\033[H'
-    fi
+    if command -v clear >/dev/null 2>&1; then clear
+    else printf '\033[2J\033[H'; fi
 }
 
 create_catalog() {
     cat > "$DNS_CATALOG" << 'CATALOG'
-#CATVER=3.9.1
+#CATVER=3.9.2
 #== ОБХОД БЛОКИРОВОК (bypass) ==
 mafioznik|Mafioznik|https://dns.mafioznik.com/dns-query|bypass
 comss_one|Comss.one|https://dns.comss.one/dns-query|bypass
@@ -293,11 +273,11 @@ menu_reset_to_stock() {
     printf '%b  ⚠  ВОЗВРАТ В СТОК (безопасный)%b\n' "$R" "$N"
     printf '%b========================================%b\n\n' "$R" "$N"
     printf '%bУдаляется ТОЛЬКО то, что настроил менеджер:%b\n' "$Y" "$N"
-    printf '  • DoH-слоты и bootstrap\n'
+    printf '  • DoH-слоты и резервные DNS\n'
     printf '  • anti-block.conf\n'
     printf '  • NTP Redirect и Block-QUIC правила\n'
     printf '  • MTU fix (если ставили мы)\n'
-    printf '  • Конфиг менеджера и каталог\n\n'
+    printf '  • Конфиг менеджера, каталог, тесты\n\n'
     printf '%bНЕ трогаются (гарантировано):%b\n' "$G" "$N"
     printf '  • tg-ws-proxy-go и tailscale\n'
     printf '  • sysctl (ядро не изменяется)\n'
@@ -311,12 +291,10 @@ menu_reset_to_stock() {
     conf_clean=$(printf '%s' "$confirm" | tr -d ' \t\r\n' | tr 'A-Z' 'a-z')
     case "$conf_clean" in
         сток|stock|y|s)
-            printf '%b[✓] Подтверждено%b\n\n' "$G" "$N"
-            ;;
+            printf '%b[✓] Подтверждено%b\n\n' "$G" "$N" ;;
         *)
             printf '%b[✗] Отменено%b\n' "$Y" "$N"
-            sleep 2; return
-            ;;
+            sleep 2; return ;;
     esac
 
     printf '[1/6] Остановка DoH...\n'
@@ -370,18 +348,17 @@ menu_reset_to_stock() {
 
     printf '[6/6] Полная очистка артефактов менеджера...\n'
     rm -f /etc/dnsmasq.d/anti-block.conf
-    # НЕ удаляем sysctl.d/99-custom.conf — он может использоваться другими сервисами
-    # НЕ удаляем hotplug/ntp/99-tailscale — он нужен для tailscale
-    # НЕ запускаем sysctl -p — это ломает tg-ws-proxy-go
+    # НЕ удаляем sysctl.d/99-custom.conf — может использоваться другими
+    # НЕ удаляем hotplug/ntp/99-tailscale — нужен для tailscale
+    # НЕ запускаем sysctl -p — ломает tg-ws-proxy-go
     rm -f /root/rollback-dns.sh
-    # УДАЛЯЕМ КОНФИГ МЕНЕДЖЕРА (ключевое исправление!)
+    # УДАЛЯЕМ ВСЕ КОНФИГИ МЕНЕДЖЕРА
     rm -f "$CONFIG_FILE"
     rm -f "$DNS_CATALOG"
     rm -f "$TEST_RESULTS"
     cleanup_tmp
     [ -f /etc/crontabs/root ] && sed -i '/update-bogus-dns/d; /dns-manager/d' /etc/crontabs/root
 
-    # Перезапускаем ТОЛЬКО то, что меняли
     /etc/init.d/firewall restart 2>/dev/null
     /etc/init.d/dnsmasq restart
     /etc/init.d/sysntpd restart 2>/dev/null
@@ -392,8 +369,6 @@ menu_reset_to_stock() {
     else
         printf '%b[✓] https-dns-proxy остановлен%b\n' "$G" "$N"
     fi
-
-    # Проверяем что tg-proxy жив
     if [ -f /etc/init.d/tg-ws-proxy-go ]; then
         if pgrep -f tg-ws-proxy >/dev/null 2>&1; then
             printf '%b[✓] tg-ws-proxy-go работает (не затронут)%b\n' "$G" "$N"
@@ -479,14 +454,14 @@ menu_profile_default() {
 }
 
 # ============================================================
-# ТЕСТ DNS (НЕЗАВИСИМЫЙ)
+# ТЕСТ DNS — «не резолвится» вместо «bootstrap»
 # ============================================================
 menu_test_dns() {
     flush_stdin; clear_screen
     printf '%b========================================%b\n' "$B" "$N"
     printf '%b  🔍 Тест всех DNS (независимо от DoH)%b\n' "$B" "$N"
     printf '%b========================================%b\n\n' "$B" "$N"
-    printf '%bРезолв через bootstrap-IP + curl --resolve%b\n\n' "$Y" "$N"
+    printf '%bРезолв через резервные IP + curl --resolve%b\n\n' "$Y" "$N"
     printf '%-20s %-8s %-9s %-9s %s\n' "DNS" "Тип" "Статус" "Скорость" "Примечание"
     printf '%b---------------------------------------------------------------------------%b\n' "$C" "$N"
     > "$TEST_RESULTS"
@@ -495,7 +470,7 @@ menu_test_dns() {
         host=$(printf '%s' "$url" | sed 's|^https://||; s|/.*$||')
         ip=$(resolve_host "$host")
         if [ -z "$ip" ]; then
-            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "bootstrap"
+            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "не резолвится"
             echo "${id}|0|FAIL" >> "$TEST_RESULTS"; continue
         fi
         t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 5 \
@@ -507,7 +482,7 @@ menu_test_dns() {
             printf '%-20s %-8s %bOK%b     %-9s %s\n' "$name" "$dtype" "$G" "$N" "${ms}ms" "$note"
             echo "${id}|${ms}|OK" >> "$TEST_RESULTS"
         else
-            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "DoH"
+            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "DoH не ответил"
             echo "${id}|0|FAIL" >> "$TEST_RESULTS"
         fi
     done
@@ -607,23 +582,33 @@ menu_slots() {
     done
 }
 
+# ============================================================
+# BOOTSTRAP МЕНЮ — пункт 4 переименован + описание
+# ============================================================
 menu_bootstrap() {
     flush_stdin
     while true; do
         clear_screen
         printf '%b========================================%b\n' "$B" "$N"
-        printf '%b  Bootstrap DNS%b\n' "$B" "$N"
+        printf '%b  Резервные DNS (Bootstrap)%b\n' "$B" "$N"
         printf '%b========================================%b\n\n' "$B" "$N"
+        printf '%bЧто это?%b Это обычные DNS-серверы (по IP),\n' "$Y" "$N"
+        printf 'которые нужны чтобы %bнайти адрес DoH-сервера%b\n' "$W" "$N"
+        printf 'при первом запуске. Без них DoH не запустится.\n\n'
         printf 'Текущий: %b%s%b\n\n' "$Y" "$BOOTSTRAP_DNS" "$N"
-        printf '  %b1)%b Полный 10 IP [рек]\n' "$G" "$N"
-        printf '  2) РФ (4 IP)\n  3) Yandex\n  4) AdGuard\n  5) Вручную\n'
-        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '  %b1)%b Полный 10 IP (Yandex+AdGuard+CF+Google+Quad9) [рек]\n' "$G" "$N"
+        printf '  %b2)%b РФ безопасный (Yandex + AdGuard, 4 IP)\n' "$G" "$N"
+        printf '  %b3)%b Только Yandex (2 IP)\n' "$G" "$N"
+        printf '  %b4)%b Только AdGuard (2 IP)\n' "$G" "$N"
+        printf '  %b5)%b Ввести свои IP вручную\n' "$G" "$N"
+        printf '  %bEnter) Назад%b\n\n' "$C" "$N"
+        printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,1.1.1.1,1.0.0.1,8.8.8.8,8.8.4.4,9.9.9.9,149.112.112.112" ;;
             2) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15" ;;
             3) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1" ;;
             4) BOOTSTRAP_DNS="94.140.14.14,94.140.15.15" ;;
-            5) printf 'IP: '; safe_read BOOTSTRAP_DNS ;;
+            5) printf 'IP через запятую: '; safe_read BOOTSTRAP_DNS ;;
             *) return ;;
         esac
         save_config; return
@@ -900,7 +885,7 @@ RB
 }
 
 # ============================================================
-# СОСТОЯНИЕ
+# СОСТОЯНИЕ — расширенная диагностика + больше сайтов
 # ============================================================
 menu_status() {
     flush_stdin; clear_screen
@@ -910,26 +895,74 @@ menu_status() {
     a=$(uci -q get dhcp.@dnsmasq[0].allservers)
     [ "$a" = "1" ] && printf '%b[✓] Балансировщик ВКЛ%b\n' "$G" "$N" || printf '%b[~] Балансировщик ВЫКЛ%b\n' "$Y" "$N"
     echo ""
+
+    # === Диагностика dnsmasq ===
     printf '%bdnsmasq:%b\n' "$C" "$N"
-    pgrep dnsmasq >/dev/null 2>&1 && printf '  %b[✓] Запущен%b\n' "$G" "$N" || printf '  %b[✗] НЕ запущен!%b\n' "$R" "$N"
+    if pgrep dnsmasq >/dev/null 2>&1; then
+        printf '  %b[✓] Процесс запущен%b\n' "$G" "$N"
+    else
+        printf '  %b[✗] НЕ запущен! Попробуйте: /etc/init.d/dnsmasq start%b\n' "$R" "$N"
+    fi
+    # Проверка порта 53
+    if command -v netstat >/dev/null 2>&1; then
+        if netstat -ln 2>/dev/null | grep -q ':53 '; then
+            printf '  %b[✓] Порт 53 слушается%b\n' "$G" "$N"
+        else
+            printf '  %b[✗] Порт 53 НЕ слушается%b\n' "$R" "$N"
+        fi
+    fi
     echo ""
+
+    # === DoH процессы ===
     printf '%bDoH процессы:%b\n' "$C" "$N"
     pc=$(ps | grep https-dns-proxy | grep -v grep | wc -l)
-    [ "$pc" -eq 0 ] && printf '  %b[✗] Нет процессов!%b\n' "$R" "$N" || {
+    if [ "$pc" -eq 0 ]; then
+        printf '  %b[✗] Нет процессов!%b\n' "$R" "$N"
+    else
         printf '  %b[✓] %s процессов:%b\n' "$G" "$pc" "$N"
         ps | grep https-dns-proxy | grep -v grep | awk '{p="";u="";for(i=1;i<=NF;i++){if($i=="-p")p=$(i+1);if($i=="-r")u=$(i+1)}if(p&&u)printf "    %s -> %s\n",p,u}'
-    }
+    fi
     echo ""
-    printf '%bBootstrap:%b\n' "$C" "$N"
+
+    printf '%bРезервные DNS (Bootstrap):%b\n' "$C" "$N"
     ps | grep https-dns-proxy | grep -v grep | head -1 | awk '{for(i=1;i<=NF;i++)if($i=="-b"){printf "  %s\n",$(i+1);exit}}'
     printf '\n%bNTP:%b %s\n' "$C" "$N" "$(get_ntp_preset_name "$NTP_PRESET")"
     echo ""
-    printf '%bResolution:%b\n' "$C" "$N"
-    for dom in ya.ru chatgpt.com youtube.com instagram.com; do
+
+    # === Resolution с диагностикой ===
+    printf '%bResolution (через dnsmasq):%b\n' "$C" "$N"
+    _any_ok=0
+    for dom in ya.ru chatgpt.com youtube.com instagram.com linkedin.com discord.com github.com twitter.com claude.ai; do
         ip=$(timeout 3 nslookup "$dom" 127.0.0.1 2>/dev/null | grep -vE '127\.0\.0\.|0\.0\.0\.0' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
-        [ -n "$ip" ] && printf '  %-18s -> %b%s%b\n' "$dom" "$G" "$ip" "$N" \
-            || printf '  %-18s -> %bNO_ANSWER%b\n' "$dom" "$R" "$N"
+        if [ -n "$ip" ]; then
+            printf '  %-18s -> %b%s%b\n' "$dom" "$G" "$ip" "$N"
+            _any_ok=1
+        else
+            printf '  %-18s -> %bNO_ANSWER%b\n' "$dom" "$R" "$N"
+        fi
     done
+
+    # Если всё NO_ANSWER — показываем подсказку
+    if [ "$_any_ok" = "0" ]; then
+        echo ""
+        printf '%b⚠ Все сайты NO_ANSWER. Возможные причины:%b\n' "$Y" "$N"
+        if ! pgrep dnsmasq >/dev/null 2>&1; then
+            printf '  • dnsmasq не запущен → выполните %b/etc/init.d/dnsmasq start%b\n' "$G" "$N"
+        fi
+        if [ "$pc" -eq 0 ]; then
+            printf '  • Нет DoH процессов → примените настройки (пункт 8)\n'
+        fi
+        # Пробуем прямой тест через первый DoH порт
+        _first_port=$(ps | grep https-dns-proxy | grep -v grep | awk '{for(i=1;i<=NF;i++)if($i=="-p"){print $(i+1);exit}}')
+        if [ -n "$_first_port" ] && command -v dig >/dev/null 2>&1; then
+            _direct_ip=$(dig @127.0.0.1 -p "$_first_port" ya.ru A +short +time=2 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+            if [ -n "$_direct_ip" ]; then
+                printf '  • DoH работает напрямую (порт %s) → проблема в dnsmasq\n' "$_first_port"
+                printf '    Прямой тест ya.ru: %b%s%b\n' "$G" "$_direct_ip" "$N"
+            fi
+        fi
+    fi
+
     echo ""; printf 'Нажмите Enter...'; safe_read _
 }
 
@@ -954,7 +987,7 @@ main_menu() {
         check_duplicates && printf '\n  %b⚠ Есть дубли URL!%b\n' "$Y" "$N"
         echo ""
         printf '  %b1) ⚡ Профили%b    2) Слоты       3) Тест DNS\n' "$G" "$N"
-        printf '  4) Bootstrap     5) Доп.настр.  6) Anti-block\n'
+        printf '  4) Резервные DNS  5) Доп.настр.  6) Anti-block\n'
         printf '  7) Состояние     %b8) ⚡ Применить%b  9) Откат\n' "$G" "$N"
         printf '  %bS) 🔄 СТОК%b       0) Выход\n\n' "$R" "$N"
         printf 'Выбор: '
