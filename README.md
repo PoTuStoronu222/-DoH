@@ -9,10 +9,6 @@ Pre-release
 
 **`.ru` / `.su` / `.рф` → отдельный RU DNS**
 
-Основной исполняемый файл проекта:
-
-👉 **[`dns-manager.sh`](https://github.com/PoTuStoronu222/Openwrt-Smartdns-DoH/blob/main/dns-manager.sh)**
-
 > [!IMPORTANT]
 > DNS Manager работает на уровне DNS. Он не заменяет полноценные средства DPI-обхода, VPN, прокси и туннели. Для DPI-блокировок и других методов фильтрации DNS может быть недостаточно; такие решения могут использоваться параллельно.
 
@@ -116,9 +112,6 @@ RU DNS
 
 # 🚀 Быстрая установка
 
-Менеджер находится в репозитории:
-
-**[`dns-manager.sh`](https://github.com/PoTuStoronu222/Openwrt-Smartdns-DoH/blob/main/dns-manager.sh)**
 
 Установка выполняется один раз:
 
