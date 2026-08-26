@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX11
+# DNS Manager v6.6-FIX12
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX11"
+VERSION="6.6-FIX12"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -101,10 +101,10 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX10' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX12' "$DNS_CATALOG" 2>/dev/null; then
         [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FIX10
+# DNSCATVER=6.6-FIX12
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
@@ -604,14 +604,25 @@ ensure_doh_slot() {
         if [ -n "$ownp" ]; then
             sec_idx="$(printf '%s' "$ownp" | cut -d'|' -f1)"
             old_url="$(printf '%s' "$ownp" | cut -d'|' -f3)"
-            if [ "$old_url" != "$url" ]; then
-                printf "  ${C_WHITE}= обновляю наш слот %s: %s → %s${C_NC}\n" "$slot" "$old_url" "$url"
-                uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].resolver_url=$url"
-                uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].bootstrap_dns=$BOOTSTRAP_DNS"
-                uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].request_timeout=2"
+            if [ "$old_url" = "$url" ]; then
+                claim_port_tx "$p" || { p=""; }
+                if [ -n "$p" ]; then
+                    eval "PORT_$slot=\"$p\""
+                    printf "  ${C_WHITE}= %s уже наш, порт %s${C_NC}\n" "$name" "$p"
+                    return 0
+                fi
+            else
+                # Старый slot-port принадлежит другому DNS. Не присваиваем его этому slot.
+                p=""
             fi
-            claim_port_tx "$p" || { err_msg "Порт $p уже закреплён за другим выбранным слотом."; return 1; }
-            return 0
+        elif ! port_used_anywhere "$p"; then
+            if claim_port_tx "$p"; then
+                :
+            else
+                p=""
+            fi
+        else
+            p=""
         fi
     fi
 
@@ -926,6 +937,13 @@ apply_settings() {
 
     run_discovery
     load_config
+    # До любых изменений DNS Manager требует рабочий dnsmasq. Иначе нельзя безопасно построить DNS-цепочку.
+    if [ -n "$SLOT_1$SLOT_2$SLOT_3$SLOT_4$SLOT_5$SLOT_6$SLOT_RU$SLOT_RU_2" ] && [ "$DNSMASQ_RUN" != yes ]; then
+        err_msg "dnsmasq сейчас не запущен. Изменения не выполняются."
+        warn_msg "Сначала восстановите/запустите dnsmasq и повторите применение. Чужая конфигурация не изменена."
+        pause
+        return 1
+    fi
     TX_RESERVED_PORTS=""
     tx_snapshot_start || { err_msg "Не удалось создать снимок транзакции. Изменения не выполняются."; return 1; }
     log_tx "PLAN" "all" "APPLY" "START" "version=$VERSION"
@@ -940,10 +958,17 @@ apply_settings() {
     printf "  DNS: будут добавлены только отсутствующие записи.\n"
     printf "  NTP: отдельная IP-first секция DNS Manager.\n"
     printf "  Дополнительные функции: изменяются только выбранные пользователем модули.\n\n"
-    repair_duplicate_own_doh_ports || { err_msg "Не удалось исправить существующие дубли DoH-портов."; tx_restore_on_failure; return 1; }
+    # Старые дубли исправляются по одному выбранному slot в ensure_doh_slot.
     for s in 1 2 3 4 5 6; do eval "v=\${SLOT_$s}"; ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; tx_restore_on_failure; return 1; }; done
     ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
     ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
+    # Защита плана: два выбранных OWN-объекта не могут слушать один и тот же порт.
+    plan_dup="$(for s in 1 2 3 4 5 6 RU RU_2; do eval "p=\${PORT_$s}"; [ -n "$p" ] && printf '%s\n' "$p"; done | sort | uniq -d | head -n1)"
+    if [ -n "$plan_dup" ]; then
+        err_msg "Внутренняя ошибка плана: порт $plan_dup назначен нескольким слотам."
+        tx_restore_on_failure
+        return 1
+    fi
     uci commit https-dns-proxy 2>/dev/null
 
     reconcile_dnsmasq || { err_msg "Не удалось обновить dnsmasq. Откат."; tx_restore_on_failure; return 1; }
