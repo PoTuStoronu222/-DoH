@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX13
+# DNS Manager v6.6 FINAL — Hybrid SmartDNS
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX13"
+VERSION="6.6-FINAL-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -101,10 +101,10 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX13' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FINAL-HYBRID' "$DNS_CATALOG" 2>/dev/null; then
         [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FIX13
+# DNSCATVER=6.6-FINAL-HYBRID
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
@@ -192,10 +192,10 @@ hagezi_ctif|security|threat-only|HaGeZi CTIF|https://ctif.hagezi.org/dns-query|g
 dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
 EOF_DNS
     fi
-    if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FIX7' "$NTP_CATALOG" 2>/dev/null; then
+    if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FINAL-HYBRID' "$NTP_CATALOG" 2>/dev/null; then
         [ -s "$NTP_CATALOG" ] && cp -f "$NTP_CATALOG" "$NTP_CATALOG.previous" 2>/dev/null
         cat > "$NTP_CATALOG" <<'EOF_NTP'
-# NTPCATVER=6.6-FIX7
+# NTPCATVER=6.6-FINAL-HYBRID
 # ID|CATEGORY|NAME|IPV4|IPV6|MODE|LEAP|STATUS
 cf_ip|global|Cloudflare|162.159.200.1 162.159.200.123|2606:4700:f1::1 2606:4700:f1::123|ip-first|no-smear|verified-current
 nist_ip|global|NIST|129.6.15.28 129.6.15.29 129.6.15.30 129.6.15.27 129.6.15.26|2610:20:6f15:15::27 2610:20:6f15:15::26|ip-first|no-smear|verified-current
@@ -212,7 +212,7 @@ EOF_NTP
     if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FIX13' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
         [ -s "$BOOTSTRAP_CATALOG" ] && cp -f "$BOOTSTRAP_CATALOG" "$BOOTSTRAP_CATALOG.previous" 2>/dev/null
         cat > "$BOOTSTRAP_CATALOG" <<'EOF_BOOT'
-# BOOTSTRAPCATVER=6.6-FIX7
+# BOOTSTRAPCATVER=6.6-FINAL-HYBRID
 # ID|PROVIDER|IPV4|IPV6|ROLE|STATUS
 yandex|Yandex|77.88.8.8,77.88.8.1|2a02:6b8::feed:0ff,2a02:6b8:0:1::feed:0ff|bootstrap|verified-current
 adguard|AdGuard|94.140.14.14,94.140.15.15|2a10:50c0::ad1:ff,2a10:50c0::ad2:ff|bootstrap|verified-current
@@ -228,7 +228,7 @@ EOF_BOOT
     if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FIX13' "$BOGUS_CATALOG" 2>/dev/null; then
         [ -s "$BOGUS_CATALOG" ] && cp -f "$BOGUS_CATALOG" "$BOGUS_CATALOG.previous" 2>/dev/null
         cat > "$BOGUS_CATALOG" <<'EOF_BOGUS'
-# BOGUSCATVER=6.6-FIX7
+# BOGUSCATVER=6.6-FINAL-HYBRID
 # ID|TYPE|IP|DESCRIPTION|CONFIDENCE|STATUS
 rtk_95_167|hijack|95.167.13.50|Ростелеком: исторически подтвержденная заглушка|high|historical-confirmed
 ttk_62_33|hijack|62.33.207.195|ТТК: исторически указанный адрес|medium|historical-confirmed
@@ -244,6 +244,10 @@ sys_zero|system|0.0.0.0|Системное значение: только вру
 sys_loop|system|127.0.0.1|Системное значение: только вручную|high|manual-only
 EOF_BOGUS
     fi
+    if [ -f "$STATE_DIR/catalog.version" ] && [ "$(cat "$STATE_DIR/catalog.version" 2>/dev/null)" != "$VERSION" ]; then
+        rm -f "$TEST_RESULTS"
+    fi
+    printf '%s\n' "$VERSION" > "$STATE_DIR/catalog.version" 2>/dev/null
 }
 
 load_config() {
@@ -254,10 +258,11 @@ load_config() {
     : "${SLOT_RU:=}"; : "${SLOT_RU_2:=}"
     : "${PORT_1:=}"; : "${PORT_2:=}"; : "${PORT_3:=}"; : "${PORT_4:=}"; : "${PORT_5:=}"; : "${PORT_6:=}"
     : "${PORT_RU:=}"; : "${PORT_RU_2:=}"
-    : "${BOOTSTRAP_DNS:=1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,9.9.9.9,149.112.112.112}"
+    : "${BOOTSTRAP_DNS:=77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15}"
     : "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"
     : "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}"
     : "${BALANCER_ENABLED:=1}"; : "${NTP_PRESET:=cf_ip}"; : "${DNS_PROFILE:=hybrid}"
+    TLD_SPLIT="$TLD_RU_ENABLED"
     if [ "$_had_dns_profile" = 0 ] && [ -z "$DNS_PROFILE" ]; then
         DNS_PROFILE="hybrid"
     fi
@@ -533,6 +538,7 @@ hybrid_set_defaults() {
     DNS_PROFILE="hybrid"
     TLD_RU_ENABLED=1
     BALANCER_ENABLED=1
+    TLD_SPLIT=1
 }
 
 hybrid_desired_port() {
@@ -1102,43 +1108,121 @@ tx_commit() {
     log_tx "TX" "transaction" "COMMIT" "OK" "dir=$TX_DIR"
 }
 
+# ----- Hybrid port reconciler -----
+hybrid_reconcile_existing() {
+    [ "$DNS_PROFILE" = hybrid ] || return 0
+    # Remove only duplicated manager-owned sections for the same URL; keep foreign/unknown untouched.
+    for id in mafioznik comss_bypass astracat malw_link comss_ru vppay yandex_ru; do
+        url="$(normalize_url "$(dns_url "$id")")"
+        [ -n "$url" ] || continue
+        seen=""
+        i=0
+        while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
+            m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
+            u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
+            if [ "$m" = 1 ] && [ "$u" = "$url" ]; then
+                if [ -n "$seen" ]; then
+                    uci -q delete "https-dns-proxy.@https-dns-proxy[$i]" || return 1
+                    i=0
+                    seen=1
+                    continue
+                fi
+                seen="$i"
+            fi
+            i=$((i+1))
+        done
+    done
+
+    # First move manager-owned objects that block another selected role to temporary free ports.
+    for slot in 1 2 3 4 5 6 RU; do
+        eval "want=\${SLOT_$slot}"
+        [ -n "$want" ] || continue
+        target="$(hybrid_desired_port "$slot")"
+        [ -n "$target" ] || continue
+        i=0
+        while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
+            m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
+            p="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].listen_port" 2>/dev/null)"
+            u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
+            if [ "$m" = 1 ] && [ "$p" = "$target" ] && [ "$u" != "$(normalize_url "$(dns_url "$want")")" ]; then
+                free_port || return 1
+                tmp="$FREE_PORT_RESULT"
+                [ "$tmp" != "$target" ] || { free_port || return 1; tmp="$FREE_PORT_RESULT"; }
+                uci set "https-dns-proxy.@https-dns-proxy[$i].listen_port=$tmp" || return 1
+            fi
+            i=$((i+1))
+        done
+    done
+    uci commit https-dns-proxy 2>/dev/null || return 1
+    return 0
+}
+
 apply_settings() {
     clear_screen
-    printf "${C_TITLE}=== ⚡ Применение ===${C_NC}\n\n"
-    printf "1. Роутер будет прочитан заново.\n2. Чужие/неизвестные объекты остаются как есть.\n3. Свои объекты могут быть добавлены/обновлены.\n4. Общий https-dns-proxy может кратко перезапуститься.\n\n"
-    confirm_action "Продолжить применение?" || return
-
+    # Always re-read the real router before building the final plan.
     run_discovery
     load_config
-    if [ "$DNS_PROFILE" = "hybrid" ]; then
+    if [ "$DNS_PROFILE" = hybrid ]; then
         hybrid_prepare_selection
-        save_config
-        if [ "$DNSMASQ_RUN" != yes ]; then
-            warn_msg "dnsmasq сейчас не запущен. Менеджер попробует поднять его после безопасного изменения конфигурации."
-        fi
     fi
+
+    printf "${C_TITLE}=== ⚡ ПОДГОТОВКА И ПЛАН ПРИМЕНЕНИЯ ===${C_NC}\n\n"
+    printf "${C_WHITE}Будет настроено:${C_NC}\n"
+    if [ "$DNS_PROFILE" = hybrid ]; then
+        printf "  ${C_YELLOW}Hybrid SmartDNS — 6 DoH + Yandex RU${C_NC}\n\n"
+        printf "${C_WHITE}Обычные запросы — параллельно:${C_NC}\n"
+        for _s in 1 2 3 4 5 6; do
+            eval "_v=\${SLOT_$_s}"
+            [ -n "$_v" ] && printf "  127.0.0.1:%s  ←  %s\n" "$(hybrid_desired_port "$_s")" "$(dns_name "$_v")"
+        done
+        [ -n "$SLOT_RU" ] && printf "\n${C_WHITE}Российские домены:${C_NC}\n  127.0.0.1:%s  ←  %s  (.ru / .su / .рф)\n" "$HYBRID_PORT_RU" "$(dns_name "$SLOT_RU")"
+        printf "\n  Режим: allservers=1\n"
+        printf "  Результат: первый успешный ответ из 6 обычных DoH\n"
+    else
+        printf "  ${C_YELLOW}Пользовательский DNS-профиль${C_NC}\n\n"
+        for _s in 1 2 3 4 5 6; do eval "_v=\${SLOT_$_s}"; [ -n "$_v" ] && printf "  Слот %s: %s\n" "$_s" "$(dns_name "$_v")"; done
+        [ -n "$SLOT_RU" ] && printf "  RU: %s\n" "$(dns_name "$SLOT_RU")"
+    fi
+
+    printf "\n${C_WHITE}Дополнительные изменения:${C_NC}\n"
+    [ "$TLD_RU_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Раздельный DNS .ru/.su/.рф\n" || printf "  ${C_YELLOW}—${C_NC} Раздельный DNS не выбран\n"
+    [ "$BALANCER_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Параллельный опрос DoH (allservers=1)\n" || printf "  ${C_YELLOW}—${C_NC} Параллельный режим не выбран\n"
+    [ "$NTP_IP_FALLBACK" = 1 ] && printf "  ${C_GREEN}✓${C_NC} NTP по IP без зависимости от DNS\n" || printf "  ${C_YELLOW}—${C_NC} NTP не изменяется\n"
+    [ "$BLOCK_QUIC" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Блокировка QUIC UDP/80 и UDP/443\n" || printf "  ${C_YELLOW}—${C_NC} QUIC не изменяется\n"
+    [ "$MTU_FIX" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Исправление MTU\n" || printf "  ${C_YELLOW}—${C_NC} MTU не изменяется\n"
+    [ "$SYSCTL_TUNING" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация sysctl\n" || printf "  ${C_YELLOW}—${C_NC} sysctl не изменяется\n"
+    [ "$GO_OPTIMIZE" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация Go / Tailscale / TG WS\n" || printf "  ${C_YELLOW}—${C_NC} Go/Tailscale/TG WS не изменяется\n"
+
+    printf "\n${C_WHITE}Текущее состояние до применения:${C_NC}\n"
+    printf "  dnsmasq: %b\n" "$(state_word "$DNSMASQ_RUN")"
+    printf "  DoH: %s (наших %s / чужих %s / неизвестных %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
+    if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
+        printf "  ${C_YELLOW}⚠ Обнаружены чужие или неизвестные DoH. Они не будут изменены.${C_NC}\n"
+        printf "  ${C_YELLOW}  Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
+    fi
+
+    printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
+    confirm_action "Применить показанную выше конфигурацию?" || return
+
+    TX_ID="$(date +%Y%m%d-%H%M%S)-$$"
     TX_RESERVED_PORTS=""
     tx_snapshot_start || { err_msg "Не удалось создать снимок транзакции. Изменения не выполняются."; return 1; }
     log_tx "PLAN" "all" "APPLY" "START" "version=$VERSION"
 
-    if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
-        warn_msg "Обнаружены чужие/неизвестные DoH: чужих=$DOH_FOREIGN неизвестных=$DOH_UNKNOWN."
-        confirm_action "Разрешить краткий перезапуск общей службы https-dns-proxy?" || return
+    # The shared service must be stopped before changing listeners, otherwise old sockets
+    # can falsely look like foreign port conflicts during a dirty-router repair.
+    if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = hybrid ]; then
+        /etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
     fi
 
-    printf "\n${C_WHITE}План:${C_NC}\n"
-    printf "  DoH: каждый новый экземпляр получает отдельный свободный порт; чужие настройки не меняются.\n"
-    printf "  DNS: будут добавлены только отсутствующие записи.\n"
-    printf "  NTP: отдельная IP-first секция DNS Manager.\n"
-    printf "  Дополнительные функции: изменяются только выбранные пользователем модули.\n\n"
-    # Hybrid: process roles from high to low so legacy duplicates on 5053 can be moved
-    # onto their stable target roles without creating a second collision chain.
-    if [ "$DNS_PROFILE" = "hybrid" ]; then
-        for s in 6 5 4 3 2 1; do
+    if [ "$DNS_PROFILE" = hybrid ]; then
+        hybrid_reconcile_existing || { err_msg "Не удалось привести существующие наши DoH к ролям 5053–5059."; tx_restore_on_failure; return 1; }
+        TX_RESERVED_PORTS=""
+        for s in 1 2 3 4 5 6; do
             eval "v=\${SLOT_$s}"
             ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить Hybrid-слот $s."; tx_restore_on_failure; return 1; }
         done
-        ensure_doh_slot RU "$SLOT_RU" || { err_msg "Не удалось подготовить RU-слот."; tx_restore_on_failure; return 1; }
+        ensure_doh_slot RU "$SLOT_RU" || { err_msg "Не удалось подготовить RU-слот 5059."; tx_restore_on_failure; return 1; }
     else
         for s in 1 2 3 4 5 6; do
             eval "v=\${SLOT_$s}"
@@ -1147,45 +1231,38 @@ apply_settings() {
         ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
         ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
     fi
-    # Защита плана: два выбранных OWN-объекта не могут слушать один и тот же порт.
+
+    # Strict plan validation before commit.
     plan_dup="$(for s in 1 2 3 4 5 6 RU RU_2; do eval "p=\${PORT_$s}"; [ -n "$p" ] && printf '%s\n' "$p"; done | sort | uniq -d | head -n1)"
     if [ -n "$plan_dup" ]; then
-        err_msg "Внутренняя ошибка плана: порт $plan_dup назначен нескольким слотам."
-        tx_restore_on_failure
-        return 1
+        err_msg "План отменён: порт $plan_dup назначен нескольким DNS одновременно."; tx_restore_on_failure; return 1
     fi
-    uci commit https-dns-proxy 2>/dev/null
+    uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH."; tx_restore_on_failure; return 1; }
 
-    reconcile_dnsmasq || { err_msg "Не удалось обновить dnsmasq. Откат."; tx_restore_on_failure; return 1; }
+    reconcile_dnsmasq || { err_msg "Не удалось настроить dnsmasq."; tx_restore_on_failure; return 1; }
     if [ "$NTP_IP_FALLBACK" = 1 ]; then
-        printf "
-${C_YELLOW}NTP IP-fallback включён: он нужен для ранней синхронизации времени без DNS.${C_NC}
-"
-        if confirm_action "Применить IP-профиль NTP вместе с DNS?"; then apply_ntp_if_needed || { tx_restore_on_failure; return 1; }; fi
+        apply_ntp_if_needed || { err_msg "Не удалось настроить NTP по IP."; tx_restore_on_failure; return 1; }
     fi
-    [ "$BLOCK_QUIC" = 1 ] && apply_quic || { [ "$BLOCK_QUIC" = 1 ] && { err_msg "Не удалось применить QUIC."; tx_restore_on_failure; return 1; }; }
-    [ "$MTU_FIX" = 1 ] && { uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; }
-    [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || { [ "$SYSCTL_TUNING" = 1 ] && { err_msg "Не удалось применить Sysctl."; tx_restore_on_failure; return 1; }; }
-    [ "$GO_OPTIMIZE" = 1 ] && apply_go || { [ "$GO_OPTIMIZE" = 1 ] && { err_msg "Не удалось применить оптимизацию Go."; tx_restore_on_failure; return 1; }; }
+    if [ "$BLOCK_QUIC" = 1 ]; then apply_quic || { err_msg "Не удалось применить блокировку QUIC."; tx_restore_on_failure; return 1; }; fi
+    if [ "$MTU_FIX" = 1 ]; then uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; fi
+    if [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl || { err_msg "Не удалось применить sysctl."; tx_restore_on_failure; return 1; }; fi
+    if [ "$GO_OPTIMIZE" = 1 ]; then apply_go || { err_msg "Не удалось применить оптимизацию Go."; tx_restore_on_failure; return 1; }; fi
 
-    /etc/init.d/https-dns-proxy restart 2>/dev/null
-    /etc/init.d/dnsmasq restart 2>/dev/null
-    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null
-    else /etc/init.d/firewall restart 2>/dev/null
-    fi
+    /etc/init.d/https-dns-proxy restart 2>/dev/null || true
+    /etc/init.d/dnsmasq restart 2>/dev/null || true
+    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null; else /etc/init.d/firewall restart 2>/dev/null; fi
 
-    # Refresh actual state before verify.
     run_discovery
     if verify_after_apply; then
+        tx_commit
+        save_config
+        ok_msg "Готово. Выбранная конфигурация успешно применена и проверена."
         log_tx "VERIFY" "all" "VERIFY" "OK" "dnsmasq=$DNSMASQ_RUN,doh=$DOH_TOTAL"
-        ok_msg "Применение завершено и базовые проверки прошли."
     else
         log_tx "VERIFY" "all" "VERIFY" "FAIL" "dnsmasq=$DNSMASQ_RUN,doh=$DOH_TOTAL"
         tx_restore_on_failure
-        err_msg "Применение отменено: система не прошла проверку после изменений."
-        warn_msg "Чужие/неизвестные объекты не брались под управление."
+        err_msg "Конфигурация не прошла проверку. Все изменения этой транзакции отменены, где это безопасно возможно."
     fi
-    [ "$TX_ACTIVE" = 1 ] && tx_commit
     pause
 }
 
@@ -1289,42 +1366,79 @@ owner_ru() {
 }
 config_state_word() {
     v="$1"
-    [ "$v" = 1 ] && { printf 'ВКЛ • будет применено'; return; }
-    printf 'ВЫКЛ • не выбрано'
+    if [ "$v" = 1 ]; then
+        printf '%s' "${C_GREEN}ВКЛ • выбрано${C_NC}"
+    else
+        printf '%s' "${C_YELLOW}ВЫКЛ • не выбрано${C_NC}"
+    fi
 }
+
 show_map() {
     clear_screen
     printf "${C_WHITE}╔════════════════════════════════════════════════╗\n"
     printf "║             📊 Карта состояния роутера         ║\n"
     printf "╚════════════════════════════════════════════════╝${C_NC}\n\n"
-    printf "${C_WHITE}Система${C_NC}\n"
-    printf "  OpenWrt: %s | платформа: %s | архитектура: %s\n" "$SYS_OWRT" "$SYS_TARGET" "$SYS_ARCH"
-    printf "  Firewall: %s | LAN: %s | WAN: %s\n" "$SYS_FW" "$LAN_IP" "$WAN_PROTO"
-    printf "  IPv4: %b | IPv6: %b\n" "$(state_word "$IPV4_ROUTE")" "$(state_word "$IPV6_ROUTE")"
-    printf "  Инструменты: curl=%b dig=%b ntpd=%b\n\n" "$(state_word "$HAS_CURL")" "$(state_word "$HAS_DIG")" "$(state_word "$HAS_NTPD")"
-    printf "${C_WHITE}DNS${C_NC}\n"
-    printf "  dnsmasq: %b | DoH всего: %s\n" "$(state_word "$DNSMASQ_RUN")" "$DOH_TOTAL"
-    printf "  Наших: %s | Чужих: %s | Неизвестных: %s\n" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
-    printf "  SmartDNS=%b  Unbound=%b  AdGuardHome=%b\n" "$(state_word "$DNS_SMARTDNS")" "$(state_word "$DNS_UNBOUND")" "$(state_word "$DNS_ADGUARD")"
-    printf "  MosDNS=%b  Sing-box=%b\n\n" "$(state_word "$DNS_MOSDNS")" "$(state_word "$DNS_SINGBOX")"
-    printf "${C_WHITE}Сторонние решения${C_NC}\n"
-    printf "  Zapret=%b  Zapret2=%b  NetShift=%b  splify=%b  Mixomo=%b\n" "$(state_word "$OTHER_ZAPRET")" "$(state_word "$OTHER_ZAPRET2")" "$(state_word "$OTHER_NETSHIFT")" "$(state_word "$OTHER_SPLIFY")" "$(state_word "$OTHER_MIXOMO")"
-    printf "  MagiTrickle=%b  Hev=%b  AWG=%b\n" "$(state_word "$OTHER_MAGI")" "$(state_word "$OTHER_HEV")" "$(state_word "$OTHER_AWG")"
-    printf "  TG-Go=%b  TG-Rust=%b  TG-MTProto=%b  ByeDPI=%b  Tailscale=%b\n\n" "$(state_word "$OTHER_TGGO")" "$(state_word "$OTHER_TGRS")" "$(state_word "$OTHER_TGMT")" "$(state_word "$OTHER_BYEDPI")" "$(state_word "$OTHER_TAILSCALE")"
-    printf "${C_WHITE}Firewall${C_NC}\n"
-    printf "  QUIC нашего менеджера: %b | чужое эквивалентное правило: %b\n" "$(state_word "$QUIC_OURS")" "$(state_word "$QUIC_FOREIGN")"
-    printf "  активный nft: %b | аппаратное ускорение: %b\n\n" "$(state_word "$NFT_ACTIVE")" "$(state_word "$FLOW_OFFLOAD")"
-    printf "${C_WHITE}Модули DNS Manager${C_NC}\n"
-    printf "  Балансировка DNS: %b\n" "$(state_word "$BALANCER_ENABLED")"
-    printf "  Раздельный DNS для .ru/.su/.рф: %b\n" "$(state_word "$TLD_RU_ENABLED")"
-    printf "  Блокировка QUIC: %b\n" "$(state_word "$BLOCK_QUIC")"
-    printf "  Исправление MTU: %b\n" "$(state_word "$MTU_FIX")"
-    printf "  Резерв времени по IP: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
-    printf "  Оптимизация ядра: %b\n" "$(state_word "$SYSCTL_TUNING")"
-    printf "  Оптимизация Go / Tailscale / TG WS: %b\n\n" "$(state_word "$GO_OPTIMIZE")"
+
+    printf "${C_SECTION}СИСТЕМА${C_NC}\n"
+    printf "  OpenWrt:        ${C_WHITE}%s${C_NC}\n" "$SYS_OWRT"
+    printf "  Платформа:      ${C_WHITE}%s${C_NC}\n" "$SYS_TARGET"
+    printf "  Архитектура:    ${C_WHITE}%s${C_NC}\n" "$SYS_ARCH"
+    printf "  Firewall:       ${C_WHITE}%s${C_NC}\n" "$SYS_FW"
+    printf "  LAN:            ${C_WHITE}%s${C_NC}\n" "$LAN_IP"
+    printf "  WAN:            ${C_WHITE}%s${C_NC}\n" "$WAN_PROTO"
+    printf "  IPv4:           %s\n" "$(state_word "$IPV4_ROUTE")"
+    printf "  IPv6:           %s\n" "$(state_word "$IPV6_ROUTE")"
+    printf "  curl:            %s\n" "$(state_word "$HAS_CURL")"
+    printf "  dig:             %s\n" "$(state_word "$HAS_DIG")"
+    printf "  ntpd:            %s\n\n" "$(state_word "$HAS_NTPD")"
+
+    printf "${C_SECTION}DNS${C_NC}\n"
+    printf "  dnsmasq:         %s\n" "$(state_word "$DNSMASQ_RUN")"
+    printf "  DoH всего:       ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
+    printf "  Наших:           ${C_WHITE}%s${C_NC}\n" "$DOH_OURS"
+    printf "  Чужих:           ${C_WHITE}%s${C_NC}\n" "$DOH_FOREIGN"
+    printf "  Неизвестных:     ${C_WHITE}%s${C_NC}\n" "$DOH_UNKNOWN"
+    printf "  SmartDNS:        %s\n" "$(state_word "$DNS_SMARTDNS")"
+    printf "  Unbound:         %s\n" "$(state_word "$DNS_UNBOUND")"
+    printf "  AdGuard Home:    %s\n" "$(state_word "$DNS_ADGUARD")"
+    printf "  MosDNS:          %s\n" "$(state_word "$DNS_MOSDNS")"
+    printf "  Sing-box:        %s\n\n" "$(state_word "$DNS_SINGBOX")"
+
+    printf "${C_SECTION}СТОРОННИЕ РЕШЕНИЯ${C_NC}\n"
+    printf "  Zapret:          %s\n" "$(state_word "$HAS_ZAPRET")"
+    printf "  Zapret2:         %s\n" "$(state_word "$HAS_ZAPRET2")"
+    printf "  NetShift:        %s\n" "$(state_word "$HAS_NETSHIFT")"
+    printf "  splify:          %s\n" "$(state_word "$HAS_SPLIFY")"
+    printf "  Mixomo:          %s\n" "$(state_word "$HAS_MIXOMO")"
+    printf "  MagiTrickle:     %s\n" "$(state_word "$HAS_MAGI")"
+    printf "  HevSocks5Tunnel: %s\n" "$(state_word "$HAS_HEV")"
+    printf "  AWG:             %s\n" "$(state_word "$HAS_AWG")"
+    printf "  TG-Go:           %s\n" "$(state_word "$HAS_TGGO")"
+    printf "  TG-Rust:         %s\n" "$(state_word "$HAS_TGRUST")"
+    printf "  TG-MTProto:      %s\n" "$(state_word "$HAS_TGMT")"
+    printf "  ByeDPI:          %s\n" "$(state_word "$HAS_BYEDPI")"
+    printf "  Tailscale:       %s\n\n" "$(state_word "$HAS_TAILSCALE")"
+
+    printf "${C_SECTION}FIREWALL${C_NC}\n"
+    printf "  QUIC нашего менеджера:      %s\n" "$(state_word "$QUIC_OURS")"
+    printf "  Чужое эквивалентное правило: %s\n" "$(state_word "$QUIC_FOREIGN")"
+    printf "  Активный nft:               %s\n" "$(state_word "$NFT_ACTIVE")"
+    printf "  Аппаратное ускорение:       %s\n\n" "$(state_word "$FLOW_OFFLOAD")"
+
+    printf "${C_SECTION}МОДУЛИ DNS MANAGER${C_NC}\n"
+    printf "  Профиль:                    ${C_YELLOW}%s${C_NC}\n" "$( [ "$DNS_PROFILE" = hybrid ] && printf '%s' 'Hybrid SmartDNS — 6 DoH + Yandex RU' || printf '%s' 'Пользовательский' )"
+    printf "  Балансировка DNS:           %s\n" "$(config_state_word "$BALANCER_ENABLED")"
+    printf "  Раздельный DNS (.ru/.su/.рф): %s\n" "$(config_state_word "$TLD_SPLIT")"
+    printf "  Блокировка QUIC:            %s\n" "$(config_state_word "$BLOCK_QUIC")"
+    printf "  Исправление MTU:             %s\n" "$(config_state_word "$MTU_FIX")"
+    printf "  Резерв времени по IP:       %s\n" "$(config_state_word "$NTP_IP_FALLBACK")"
+    printf "  Оптимизация ядра:            %s\n" "$(config_state_word "$SYSCTL_TUNING")"
+    printf "  Go / Tailscale / TG WS:     %s\n\n" "$(config_state_word "$GO_OPTIMIZE")"
+
     printf "${C_GREEN}✓ Discovery завершён. Изменений в конфигурацию не внесено.${C_NC}\n"
     pause
 }
+
 show_doh() {
     clear_screen
     printf "${C_WHITE}=== Найденные DoH ===${C_NC}\n\n"
@@ -1472,7 +1586,7 @@ menu_best_actions() {
         case "$a" in
             1)
                 if auto_fill_slots "$goal"; then
-                    if confirm_action "Применить выбранные DNS сейчас?"; then apply_settings; else printf "${C_YELLOW}Выбор сохранён. Применение не выполнялось.${C_NC}\n"; pause; fi
+                    apply_settings
                 fi
                 ;;
             2)
@@ -1545,14 +1659,14 @@ menu_bootstrap() {
     clear_screen
     printf "${C_TITLE}=== 🎯 Bootstrap DNS ===${C_NC}\n\n"
     printf "Сейчас: %s\n\n" "$BOOTSTRAP_DNS"
-    printf "${C_YELLOW}[1]${C_NC} Независимые: Cloudflare + Yandex + AdGuard + Quad9 + Google\n"
+    printf "${C_YELLOW}[1]${C_NC} Безопасные для RU: Yandex + AdGuard (4 IP)\n"
     printf "${C_YELLOW}[2]${C_NC} Cloudflare + Yandex\n"
     printf "${C_YELLOW}[3]${C_NC} Только Cloudflare\n"
     printf "${C_YELLOW}[4]${C_NC} Ввести свои IPv4  ${C_GREEN}[Enter]${C_NC} Назад  |  Выбор: "; safe_read c
     case "$c" in
-        1) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,9.9.9.9,149.112.112.112,8.8.8.8,8.8.4.4";;
-        2) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1";;
-        3) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1";;
+        1) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15";;
+        2) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1";;
+        3) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1";;
         4) printf "IP: "; safe_read BOOTSTRAP_DNS;;
         *) return;;
     esac
@@ -1592,7 +1706,7 @@ menu_extras() {
         [ -z "$c" ] && return
         case "$c" in
             1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1;;
-            2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1;;
+            2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED";;
             3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1;;
             4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1;;
             5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1;;
