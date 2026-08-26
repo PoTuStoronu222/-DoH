@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6-FIX8
+# DNS Manager v6.6-FIX9
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="6.6-FIX8"
+VERSION="6.6-FIX9"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
@@ -33,6 +33,10 @@ OWNERSHIP="$STATE_DIR/ownership.conf"
 TEST_RESULTS="$STATE_DIR/dns-test-results.conf"
 TMP_DIR="/tmp/dnsmgr"
 TX_ID="$(date +%Y%m%d-%H%M%S)-$$"
+TX_DIR="$STATE_DIR/tx-$TX_ID"
+TX_ACTIVE=0
+TX_RESERVED_PORTS=""
+TX_PRE_SLOTS=""
 
 C_RED='[1;31m'; C_GREEN='[1;32m'; C_YELLOW='[1;33m'; C_WHITE='[1;37m'; C_CYAN='[1;37m'; C_TITLE='[1;33m'; C_SECTION='[1;37m'; C_NC='[0m'
 
@@ -97,10 +101,10 @@ init_dirs() {
 }
 
 write_catalogs() {
-    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX8' "$DNS_CATALOG" 2>/dev/null; then
+    if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FIX9' "$DNS_CATALOG" 2>/dev/null; then
         [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
         cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FIX8
+# DNSCATVER=6.6-FIX9
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # Main catalog: only endpoints with current published documentation/directory evidence.
 # Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
@@ -113,7 +117,6 @@ nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dn
 geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
 comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
 vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|user-confirmed-current
-mafioznik_legacy_com|bypass|legacy|Mafioznik DNS (legacy)|https://dns.mafioznik.com/dns-query|ru/global|user-confirmed-current
 dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
 paesa|bypass|geo+youtube|Paesa DNS|https://dns.paesa.es/dns-query|global|review-runtime
 anon_no|bypass|privacy+geo|Anon.no DNS|https://dns.anon.no/dns-query|norway|review-runtime
@@ -419,6 +422,17 @@ resolve_host() {
     done
     return 1
 }
+resolve_host_fallback() {
+    host="$1"
+    ipx=""
+    if [ "$HAS_DIG" = yes ]; then
+        ipx="$(dig +short "$host" A +time=3 +tries=1 2>/dev/null | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
+    elif command -v nslookup >/dev/null 2>&1; then
+        ipx="$(nslookup "$host" 2>/dev/null | awk '/^Address: /{print $2}' | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
+    fi
+    [ -n "$ipx" ] && { echo "$ipx"; return 0; }
+    return 1
+}
 
 # ----- DNS tester -----
 test_one_dns() {
@@ -479,7 +493,7 @@ test_dns_catalog() {
 }
 show_best_category() {
     cat="$1"; limit="$2"
-    grep "|$cat|" "$TEST_RESULTS" 2>/dev/null | grep '|OK$' | sort -t'|' -k4,4n | head -n "$limit"
+    awk -F'|' -v c="$cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n | head -n "$limit"
 }
 
 # ----- NTP -----
@@ -548,12 +562,24 @@ port_used_anywhere() {
     grep -qE ":$p([[:space:]]|$)" "$LISTENERS" 2>/dev/null && return 0
     awk -F'|' -v p="$p" '$2==p{found=1} END{exit found?0:1}' "$DOH_INV"
 }
+port_reserved_tx() {
+    p="$1"
+    for rp in $TX_RESERVED_PORTS; do [ "$rp" = "$p" ] && return 0; done
+    return 1
+}
+claim_port_tx() {
+    p="$1"
+    port_reserved_tx "$p" && return 1
+    TX_RESERVED_PORTS="$TX_RESERVED_PORTS $p"
+    return 0
+}
 free_port() {
     p=5053
     while [ "$p" -le 5099 ]; do
+        port_reserved_tx "$p" && { p=$((p+1)); continue; }
         port_used_anywhere "$p"; rc=$?
         [ "$rc" = 2 ] && return 2
-        [ "$rc" = 1 ] && { echo "$p"; return 0; }
+        [ "$rc" = 1 ] && { claim_port_tx "$p"; echo "$p"; return 0; }
         p=$((p+1))
     done
     return 1
@@ -578,6 +604,7 @@ ensure_doh_slot() {
                 uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].bootstrap_dns=$BOOTSTRAP_DNS"
                 uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].request_timeout=2"
             fi
+            claim_port_tx "$p" || { err_msg "Порт $p уже закреплён за другим выбранным слотом."; return 1; }
             return 0
         fi
     fi
@@ -613,6 +640,7 @@ ensure_doh_slot() {
     [ -n "$p" ] || { err_msg "Не удалось выбрать свободный порт для $name."; return 1; }
     port_used_anywhere "$p"; rc=$?; [ "$rc" = 2 ] && { err_msg "Нельзя доказать, что порт $p свободен."; return 1; }
     [ "$rc" = 0 ] && { err_msg "Порт $p уже занят."; return 1; }
+    claim_port_tx "$p" || { err_msg "Порт $p уже выбран другим слотом."; return 1; }
 
     uci add https-dns-proxy https-dns-proxy >/dev/null || return 1
     sec='@https-dns-proxy[-1]'
@@ -804,6 +832,45 @@ verify_after_apply() {
     return 0
 }
 
+tx_snapshot_start() {
+    TX_DIR="$STATE_DIR/tx-$TX_ID"
+    rm -rf "$TX_DIR" 2>/dev/null
+    mkdir -p "$TX_DIR/files" || return 1
+    TX_ACTIVE=1
+    for f in /etc/config/dhcp /etc/config/https-dns-proxy /etc/config/firewall /etc/config/system /etc/sysctl.d/90-dns-manager.conf /etc/dnsmasq.d/90-dns-manager-bogus.conf; do
+        key="$(printf '%s' "$f" | sed 's#^/##; s#[/ ]#_#g')"
+        if [ -f "$f" ]; then cp -p "$f" "$TX_DIR/files/$key"; file_hash "$f" > "$TX_DIR/$key.before"; printf '%s|%s|1\n' "$f" "$key" >> "$TX_DIR/manifest"; else printf '%s|%s|0\n' "$f" "$key" >> "$TX_DIR/manifest"; fi
+    done
+    log_tx "TX" "transaction" "SNAPSHOT" "OK" "dir=$TX_DIR"
+}
+tx_restore_on_failure() {
+    [ "$TX_ACTIVE" = 1 ] || return 0
+    warn_msg "Применение не прошло проверку. Выполняю автоматический откат этой транзакции."
+    if [ -f "$TX_DIR/manifest" ]; then
+        while IFS='|' read -r f key existed; do
+            [ -n "$f" ] || continue
+            cur="$(file_hash "$f")"
+            before="$(cat "$TX_DIR/$key.before" 2>/dev/null)"
+            if [ "$existed" = 1 ]; then
+                if [ -f "$TX_DIR/files/$key" ]; then cp -p "$TX_DIR/files/$key" "$f" 2>/dev/null || warn_msg "Не удалось восстановить $f"; fi
+            else
+                [ -z "$before" ] || rm -f "$f" 2>/dev/null
+            fi
+        done < "$TX_DIR/manifest"
+    fi
+    uci -q revert dhcp 2>/dev/null; uci -q revert https-dns-proxy 2>/dev/null; uci -q revert firewall 2>/dev/null; uci -q revert system 2>/dev/null
+    /etc/init.d/https-dns-proxy restart 2>/dev/null
+    /etc/init.d/dnsmasq restart 2>/dev/null
+    /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null
+    TX_ACTIVE=0
+    log_tx "ROLLBACK" "transaction" "RESTORE" "OK" "dir=$TX_DIR"
+}
+tx_commit() {
+    TX_ACTIVE=0
+    printf '%s\n' "$(date +%s)" > "$TX_DIR/COMMITTED" 2>/dev/null
+    log_tx "TX" "transaction" "COMMIT" "OK" "dir=$TX_DIR"
+}
+
 apply_settings() {
     clear_screen
     printf "${C_TITLE}=== ⚡ Применение ===${C_NC}\n\n"
@@ -812,6 +879,8 @@ apply_settings() {
 
     run_discovery
     load_config
+    TX_RESERVED_PORTS=""
+    tx_snapshot_start || { err_msg "Не удалось создать снимок транзакции. Изменения не выполняются."; return 1; }
     log_tx "PLAN" "all" "APPLY" "START" "version=$VERSION"
 
     if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
@@ -820,26 +889,26 @@ apply_settings() {
     fi
 
     printf "\n${C_WHITE}План:${C_NC}\n"
-    printf "  DoH: выбранные слоты будут добавлены или обновлены; чужие настройки не меняются.\n"
+    printf "  DoH: каждый новый экземпляр получает отдельный свободный порт; чужие настройки не меняются.\n"
     printf "  DNS: будут добавлены только отсутствующие записи.\n"
     printf "  NTP: отдельная IP-first секция DNS Manager.\n"
     printf "  Дополнительные функции: изменяются только выбранные пользователем модули.\n\n"
-    for s in 1 2 3 4 5 6; do eval "v=\${SLOT_$s}"; ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; return 1; }; done
-    ensure_doh_slot RU "$SLOT_RU" || return 1
-    ensure_doh_slot RU_2 "$SLOT_RU_2" || return 1
+    for s in 1 2 3 4 5 6; do eval "v=\${SLOT_$s}"; ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; tx_restore_on_failure; return 1; }; done
+    ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
+    ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
     uci commit https-dns-proxy 2>/dev/null
 
-    reconcile_dnsmasq
+    reconcile_dnsmasq || { err_msg "Не удалось обновить dnsmasq. Откат."; tx_restore_on_failure; return 1; }
     if [ "$NTP_IP_FALLBACK" = 1 ]; then
         printf "
 ${C_YELLOW}NTP IP-fallback включён: он нужен для ранней синхронизации времени без DNS.${C_NC}
 "
-        if confirm_action "Применить IP-профиль NTP вместе с DNS?"; then apply_ntp_if_needed || return 1; fi
+        if confirm_action "Применить IP-профиль NTP вместе с DNS?"; then apply_ntp_if_needed || { tx_restore_on_failure; return 1; }; fi
     fi
-    [ "$BLOCK_QUIC" = 1 ] && apply_quic
+    [ "$BLOCK_QUIC" = 1 ] && apply_quic || { [ "$BLOCK_QUIC" = 1 ] && { err_msg "Не удалось применить QUIC."; tx_restore_on_failure; return 1; }; }
     [ "$MTU_FIX" = 1 ] && { uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; }
-    [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl
-    [ "$GO_OPTIMIZE" = 1 ] && apply_go
+    [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || { [ "$SYSCTL_TUNING" = 1 ] && { err_msg "Не удалось применить Sysctl."; tx_restore_on_failure; return 1; }; }
+    [ "$GO_OPTIMIZE" = 1 ] && apply_go || { [ "$GO_OPTIMIZE" = 1 ] && { err_msg "Не удалось применить оптимизацию Go."; tx_restore_on_failure; return 1; }; }
 
     /etc/init.d/https-dns-proxy restart 2>/dev/null
     /etc/init.d/dnsmasq restart 2>/dev/null
@@ -854,9 +923,11 @@ ${C_YELLOW}NTP IP-fallback включён: он нужен для ранней �
         ok_msg "Применение завершено и базовые проверки прошли."
     else
         log_tx "VERIFY" "all" "VERIFY" "FAIL" "dnsmasq=$DNSMASQ_RUN,doh=$DOH_TOTAL"
-        err_msg "Базовая проверка не прошла. Чужие настройки автоматически не откатывались."
-        warn_msg "Используйте журнал и пункт R для удаления только своих объектов."
+        tx_restore_on_failure
+        err_msg "Применение отменено: система не прошла проверку после изменений."
+        warn_msg "Чужие/неизвестные объекты не брались под управление."
     fi
+    [ "$TX_ACTIVE" = 1 ] && tx_commit
     pause
 }
 
@@ -957,6 +1028,11 @@ owner_ru() {
         UNKNOWN) printf '%s' 'владелец не определён';;
         *) printf '%s' "$1";;
     esac
+}
+config_state_word() {
+    v="$1"
+    [ "$v" = 1 ] && { printf 'ВКЛ • будет применено'; return; }
+    printf 'ВЫКЛ • не выбрано'
 }
 show_map() {
     clear_screen
@@ -1059,14 +1135,49 @@ auto_fill_slots() {
     [ -s "$TEST_RESULTS" ] || { warn_msg "Сначала выполните тест DNS."; pause; return 1; }
     _pool="$TMP_DIR/auto-slots"
     : > "$_pool"
+    # Select only successful entries, deduplicate by URL, then prefer fastest distinct providers.
+    _src="$TMP_DIR/auto-candidates"
+    : > "$_src"
     if [ "$_cat" = all ]; then
-        for _c in bypass clean security privacy adblock family social regional; do
-            grep "|$_c|" "$TEST_RESULTS" 2>/dev/null | grep '|OK$' | sort -t'|' -k4,4n | head -n 1 >> "$_pool"
-        done
+        awk -F'|' '$5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
     else
-        grep "|$_cat|" "$TEST_RESULTS" 2>/dev/null | grep '|OK$' | sort -t'|' -k4,4n | head -n 8 > "$_pool"
+        awk -F'|' -v c="$_cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
     fi
-    [ -s "$_pool" ] || { warn_msg "Нет успешно проверенных DNS в выбранной категории."; pause; return 1; }
+    [ -s "$_src" ] || { warn_msg "Нет успешно проверенных DNS в выбранной категории."; pause; return 1; }
+    _seen_urls="$TMP_DIR/auto-seen-urls"
+    : > "$_seen_urls"
+    i=1
+    while IFS='|' read -r _id _cat2 _name _ms _st; do
+        [ -n "$_id" ] || continue
+        _url="$(dns_url "$_id")"
+        grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
+        printf '%s\n' "$_url" >> "$_seen_urls"
+        printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
+        i=$((i+1))
+        [ "$i" -gt 9 ] && break
+    done < "$_src"
+    [ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
+    # For 'all', keep at most one fastest result per category first, then fill remaining slots by speed.
+    if [ "$_cat" = all ]; then
+        _div="$TMP_DIR/auto-diverse"
+        : > "$_div"
+        for _c in bypass clean security privacy adblock family social regional; do
+            awk -F'|' -v c="$_c" '$2==c{print}' "$_src" | head -n1 >> "$_div"
+        done
+        awk -F'|' '$0!=""{print}' "$_div" >> "$_src.div"
+        cat "$_div" 2>/dev/null > "$_src2"
+        cat "$_src" 2>/dev/null >> "$_src2"
+        : > "$_pool"
+        _seen_urls="$TMP_DIR/auto-seen-urls"; : > "$_seen_urls"
+        while IFS='|' read -r _id _cat2 _name _ms _st; do
+            [ -n "$_id" ] || continue
+            _url="$(dns_url "$_id")"
+            grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
+            printf '%s\n' "$_url" >> "$_seen_urls"
+            printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
+            [ "$(wc -l < "$_pool" | tr -d ' ')" -ge 8 ] && break
+        done < "$_src2"
+    fi
     i=1
     while IFS='|' read -r _id _cat2 _name _ms _st; do
         [ -n "$_id" ] || continue
@@ -1076,13 +1187,13 @@ auto_fill_slots() {
             8) SLOT_RU_2="$_id";;
         esac
         i=$((i+1))
+        [ "$i" -gt 8 ] && break
     done < "$_pool"
     save_config
-    printf "${C_GREEN}✓ Автоматически выбраны лучшие прошедшие тест DNS.${C_NC}\n"
+    printf "${C_GREEN}✓ Автоматически выбран набор DNS без дублей.${C_NC}\n"
     for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
     [ -n "$SLOT_RU" ] && printf "  ${C_WHITE}RU: %s${C_NC}\n" "$(dns_name "$SLOT_RU")"
     [ -n "$SLOT_RU_2" ] && printf "  ${C_WHITE}RU2: %s${C_NC}\n" "$(dns_name "$SLOT_RU_2")"
-    pause
 }
 
 menu_best_actions() {
@@ -1090,17 +1201,16 @@ menu_best_actions() {
     while :; do
         clear_screen
         printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║  ⭐ Настройка: %-31s ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n" "$title"
-        printf "${C_YELLOW}[1]${C_NC} ⚡ Автонастройка: подобрать DNS и подготовить применение\n"
+        printf "${C_YELLOW}[1]${C_NC} ⚡ Автонастройка: подобрать и применить безопасно\n"
         printf "${C_YELLOW}[2]${C_NC} ⭐ Показать лучшие варианты\n"
         printf "${C_YELLOW}[3]${C_NC} ⚙ Выбрать DNS вручную\n"
         printf "${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "
         safe_read a
         case "$a" in
             1)
-                auto_fill_slots "$goal"
-                printf "${C_YELLOW}Все выбранные DNS уже внесены в настройки менеджера.${C_NC}\n"
-                printf "${C_WHITE}Чтобы применить их к роутеру, откройте пункт [9] «Применить выбранное».${C_NC}\n"
-                pause
+                if auto_fill_slots "$goal"; then
+                    if confirm_action "Применить выбранные DNS сейчас?"; then apply_settings; else printf "${C_YELLOW}Выбор сохранён. Применение не выполнялось.${C_NC}\n"; pause; fi
+                fi
                 ;;
             2)
                 clear_screen
@@ -1168,6 +1278,21 @@ menu_bootstrap() {
 menu_bogus() {
     apply_bogus
 }
+module_state() {
+    key="$1"; val="$2"
+    [ "$val" = 1 ] || { printf 'ВЫКЛ'; return; }
+    case "$key" in
+        balance) printf 'ВКЛ • ожидает применения';;
+        tld) printf 'ВКЛ • ожидает применения';;
+        quic) [ "$QUIC_OURS" = 1 ] || [ "$QUIC_FOREIGN" = 1 ] && printf 'ВКЛ • правило найдено' || printf 'ВКЛ • ожидает применения';;
+        mtu) printf 'ВКЛ • ожидает применения';;
+        ntp) printf 'ВКЛ • IP-профиль настроен';;
+        sysctl) printf 'ВКЛ • ожидает применения';;
+        go) printf 'ВКЛ • ожидает применения';;
+        *) printf 'ВКЛ';;
+    esac
+}
+
 menu_extras() {
     while :; do
         clear_screen
