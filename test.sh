@@ -1,31 +1,45 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v3.9-FINAL
-# Цвета через tput | Безопасный сток | Не ломает tg-proxy
+# DNS Manager v3.9.1-FINAL
+# Цвета с жёстким fallback | Чистый сток | Анти-дубли
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
 SELF_SOURCE="$0"
-CATVER="3.9"
+CATVER="3.9.1"
 
-# === ЦВЕТА ЧЕРЕЗ TPUT (работает везде) ===
+# ============================================================
+# ЦВЕТА: tput → ANSI → пусто (тройной fallback)
+# ============================================================
 init_colors() {
-    if command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null)" -ge 8 ] 2>/dev/null; then
-        R=$(tput setaf 1)
-        G=$(tput setaf 2)
-        Y=$(tput setaf 3)
-        B=$(tput setaf 4)
-        C=$(tput setaf 6)
-        W=$(tput bold)
-        N=$(tput sgr0)
-    else
-        R=""; G=""; Y=""; B=""; C=""; W=""; N=""
+    # Попытка 1: tput
+    if command -v tput >/dev/null 2>&1; then
+        _tc=$(tput colors 2>/dev/null)
+        if [ -n "$_tc" ] && [ "$_tc" -ge 8 ] 2>/dev/null; then
+            R=$(tput setaf 1 2>/dev/null)
+            G=$(tput setaf 2 2>/dev/null)
+            Y=$(tput setaf 3 2>/dev/null)
+            B=$(tput setaf 4 2>/dev/null)
+            C=$(tput setaf 6 2>/dev/null)
+            W=$(tput bold 2>/dev/null)
+            N=$(tput sgr0 2>/dev/null)
+        fi
+    fi
+    # Попытка 2: если tput не дал результат → ANSI
+    if [ -z "$N" ]; then
+        R='\033[0;31m'
+        G='\033[0;32m'
+        Y='\033[1;33m'
+        B='\033[0;34m'
+        C='\033[0;36m'
+        W='\033[1;37m'
+        N='\033[0m'
     fi
 }
 
 install_self() {
     [ "$SELF_SOURCE" = "$MANAGER_PATH" ] && return 0
-    echo "=== Установка DNS Manager v3.9 ==="
+    echo "=== Установка DNS Manager v3.9.1 ==="
     if command -v apk >/dev/null 2>&1; then PKG="apk"
     elif command -v opkg >/dev/null 2>&1; then PKG="opkg"
     else echo "[!] Нет пакетного менеджера"; exit 1; fi
@@ -40,7 +54,6 @@ install_self() {
             opkg update && opkg install https-dns-proxy ca-certificates curl bind-dig ncurses
         fi
     fi
-    # Убедимся что tput доступен
     if ! command -v tput >/dev/null 2>&1; then
         if [ "$PKG" = "apk" ]; then apk add ncurses 2>/dev/null
         else opkg install ncurses 2>/dev/null; fi
@@ -53,21 +66,26 @@ install_self() {
         curl -fsSL "https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/test.sh" -o "$MANAGER_PATH"
     fi
     chmod +x "$MANAGER_PATH"
-    printf '\n%s✓ Установлено! Запуск: dns-manager%s\n\n' "$G" "$N"
+    printf '\n%b✓ Установлено! Запуск: dns-manager%b\n\n' "$G" "$N"
     exec "$MANAGER_PATH"
 }
 
 CONFIG_FILE="/root/.dns-manager.conf"
 DNS_CATALOG="/root/.dns-catalog.conf"
 TEST_RESULTS="/root/.dns-test-results.conf"
-VERSION="3.9-FINAL"
+VERSION="3.9.1-FINAL"
 
 # ============================================================
-# ПРОСТАЯ И НАДЁЖНАЯ ОЧИСТКА БУФЕРА
-# Без dd, без фоновых процессов, без мусора
+# ОЧИСТКА БУФЕРА STDIN (надёжная для всех BusyBox)
 # ============================================================
 flush_stdin() {
-    while read -t 0.1 _flush_dummy 2>/dev/null; do :; done
+    # Метод 1: timeout + dd (самый надёжный)
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 0.1 dd if=/dev/stdin of=/dev/null bs=512 count=1 2>/dev/null
+    else
+        # Метод 2: read с таймаутом (fallback)
+        while read -t 0 _flush_dummy 2>/dev/null; do :; done
+    fi
 }
 
 safe_read() {
@@ -85,7 +103,7 @@ clear_screen() {
 
 create_catalog() {
     cat > "$DNS_CATALOG" << 'CATALOG'
-#CATVER=3.9
+#CATVER=3.9.1
 #== ОБХОД БЛОКИРОВОК (bypass) ==
 mafioznik|Mafioznik|https://dns.mafioznik.com/dns-query|bypass
 comss_one|Comss.one|https://dns.comss.one/dns-query|bypass
@@ -153,7 +171,7 @@ CATALOG
 
 init_system() {
     init_colors
-    printf '%s=== Инициализация ===%s\n' "$B" "$N"
+    printf '%b=== Инициализация ===%b\n' "$B" "$N"
     command -v apk >/dev/null 2>&1 && PKG="apk" || PKG="opkg"
     NEED=0
     command -v https-dns-proxy >/dev/null 2>&1 || NEED=1
@@ -166,9 +184,9 @@ init_system() {
     [ -f /etc/crontabs/root ] && sed -i '/update-bogus-dns/d' /etc/crontabs/root
     if [ ! -f "$DNS_CATALOG" ] || ! grep -q "#CATVER=$CATVER" "$DNS_CATALOG"; then
         create_catalog
-        printf '%s[+] Каталог обновлён (v%s)%s\n' "$G" "$CATVER" "$N"
+        printf '%b[+] Каталог обновлён (v%s)%b\n' "$G" "$CATVER" "$N"
     fi
-    printf '%s[✓] Готово%s\n' "$G" "$N"
+    printf '%b[✓] Готово%b\n' "$G" "$N"
 }
 
 load_config() {
@@ -267,21 +285,20 @@ cleanup_tmp() {
 }
 
 # ============================================================
-# ВОЗВРАТ В СТОК — БЕЗОПАСНЫЙ
-# НЕ ТРОГАЕТ: sysctl, tg-ws-proxy-go, tailscale, hotplug
+# ВОЗВРАТ В СТОК — ПОЛНАЯ ОЧИСТКА ВСЕГО НАШЕГО
 # ============================================================
 menu_reset_to_stock() {
     flush_stdin; clear_screen
-    printf '%s========================================%s\n' "$R" "$N"
-    printf '%s  ⚠  ВОЗВРАТ В СТОК (безопасный)%s\n' "$R" "$N"
-    printf '%s========================================%s\n\n' "$R" "$N"
-    printf '%sУдаляется ТОЛЬКО то, что настроил менеджер:%s\n' "$Y" "$N"
+    printf '%b========================================%b\n' "$R" "$N"
+    printf '%b  ⚠  ВОЗВРАТ В СТОК (безопасный)%b\n' "$R" "$N"
+    printf '%b========================================%b\n\n' "$R" "$N"
+    printf '%bУдаляется ТОЛЬКО то, что настроил менеджер:%b\n' "$Y" "$N"
     printf '  • DoH-слоты и bootstrap\n'
     printf '  • anti-block.conf\n'
     printf '  • NTP Redirect и Block-QUIC правила\n'
     printf '  • MTU fix (если ставили мы)\n'
-    printf '  • Конфиг менеджера\n\n'
-    printf '%sНЕ трогаются (гарантировано):%s\n' "$G" "$N"
+    printf '  • Конфиг менеджера и каталог\n\n'
+    printf '%bНЕ трогаются (гарантировано):%b\n' "$G" "$N"
     printf '  • tg-ws-proxy-go и tailscale\n'
     printf '  • sysctl (ядро не изменяется)\n'
     printf '  • Системные параметры dnsmasq\n'
@@ -289,15 +306,15 @@ menu_reset_to_stock() {
     printf '  • Hotplug скрипты\n'
     printf '  • Пользовательские firewall правила\n'
     printf '  • DHCP, пароли, порты\n\n'
-    printf 'Введите %sсток%s для подтверждения: ' "$G" "$N"
+    printf 'Введите %bсток%b для подтверждения: ' "$G" "$N"
     safe_read confirm
     conf_clean=$(printf '%s' "$confirm" | tr -d ' \t\r\n' | tr 'A-Z' 'a-z')
     case "$conf_clean" in
         сток|stock|y|s)
-            printf '%s[✓] Подтверждено%s\n\n' "$G" "$N"
+            printf '%b[✓] Подтверждено%b\n\n' "$G" "$N"
             ;;
         *)
-            printf '%s[✗] Отменено%s\n' "$Y" "$N"
+            printf '%b[✗] Отменено%b\n' "$Y" "$N"
             sleep 2; return
             ;;
     esac
@@ -351,13 +368,16 @@ menu_reset_to_stock() {
     uci add_list system.ntp.server='3.openwrt.pool.ntp.org'
     uci commit system
 
-    printf '[6/6] Удаление артефактов менеджера...\n'
+    printf '[6/6] Полная очистка артефактов менеджера...\n'
     rm -f /etc/dnsmasq.d/anti-block.conf
     # НЕ удаляем sysctl.d/99-custom.conf — он может использоваться другими сервисами
     # НЕ удаляем hotplug/ntp/99-tailscale — он нужен для tailscale
     # НЕ запускаем sysctl -p — это ломает tg-ws-proxy-go
     rm -f /root/rollback-dns.sh
-    rm -f "$CONFIG_FILE" "$DNS_CATALOG" "$TEST_RESULTS"
+    # УДАЛЯЕМ КОНФИГ МЕНЕДЖЕРА (ключевое исправление!)
+    rm -f "$CONFIG_FILE"
+    rm -f "$DNS_CATALOG"
+    rm -f "$TEST_RESULTS"
     cleanup_tmp
     [ -f /etc/crontabs/root ] && sed -i '/update-bogus-dns/d; /dns-manager/d' /etc/crontabs/root
 
@@ -368,26 +388,26 @@ menu_reset_to_stock() {
 
     echo ""
     if pgrep https-dns-proxy >/dev/null 2>&1; then
-        printf '%s[✗] https-dns-proxy ещё запущен!%s\n' "$R" "$N"
+        printf '%b[✗] https-dns-proxy ещё запущен!%b\n' "$R" "$N"
     else
-        printf '%s[✓] https-dns-proxy остановлен%s\n' "$G" "$N"
+        printf '%b[✓] https-dns-proxy остановлен%b\n' "$G" "$N"
     fi
 
     # Проверяем что tg-proxy жив
     if [ -f /etc/init.d/tg-ws-proxy-go ]; then
         if pgrep -f tg-ws-proxy >/dev/null 2>&1; then
-            printf '%s[✓] tg-ws-proxy-go работает (не затронут)%s\n' "$G" "$N"
+            printf '%b[✓] tg-ws-proxy-go работает (не затронут)%b\n' "$G" "$N"
         else
-            printf '%s[!] tg-ws-proxy-go не запущен (запустите вручную)%s\n' "$Y" "$N"
+            printf '%b[!] tg-ws-proxy-go не запущен (запустите вручную)%b\n' "$Y" "$N"
         fi
     fi
     if [ -f /etc/init.d/tailscale ]; then
         if pgrep tailscale >/dev/null 2>&1; then
-            printf '%s[✓] tailscale работает (не затронут)%s\n' "$G" "$N"
+            printf '%b[✓] tailscale работает (не затронут)%b\n' "$G" "$N"
         fi
     fi
 
-    printf '\n%s✅ СТОК ВОССТАНОВЛЕН БЕЗОПАСНО!%s\n' "$G" "$N"
+    printf '\n%b✅ СТОК ВОССТАНОВЛЕН БЕЗОПАСНО!%b\n' "$G" "$N"
     printf 'Перезагрузка через 5 сек...\n'
     sleep 5
     reboot
@@ -399,31 +419,31 @@ menu_reset_to_stock() {
 # ============================================================
 menu_profile_default() {
     flush_stdin; clear_screen
-    printf '%s========================================%s\n' "$B" "$N"
-    printf '%s  ⚡ Быстрая настройка (8 профилей)%s\n' "$B" "$N"
-    printf '%s========================================%s\n\n' "$B" "$N"
-    printf '  %s1) Оптимальный [рекомендуется]%s\n' "$G" "$N"
+    printf '%b========================================%b\n' "$B" "$N"
+    printf '%b  ⚡ Быстрая настройка (8 профилей)%b\n' "$B" "$N"
+    printf '%b========================================%b\n\n' "$B" "$N"
+    printf '  %b1) Оптимальный [рекомендуется]%b\n' "$G" "$N"
     printf '     4 обходных + Yandex RU\n'
     printf '     QUIC + MTU + NTP + sysctl + Go\n\n'
-    printf '  %s2) Максимум устойчивости%s\n' "$W" "$N"
+    printf '  %b2) Максимум устойчивости%b\n' "$W" "$N"
     printf '     6 обходных + 2 РУ (Yandex + Safe)\n'
     printf '     QUIC + MTU + NTP + sysctl + Go\n\n'
-    printf '  %s3) Одна голова (слабый роутер)%s\n' "$W" "$N"
+    printf '  %b3) Одна голова (слабый роутер)%b\n' "$W" "$N"
     printf '     1 DNS, балансир ВЫКЛ\n'
     printf '     MTU + NTP + Go\n\n'
-    printf '  %s4) Только рунет%s\n' "$W" "$N"
+    printf '  %b4) Только рунет%b\n' "$W" "$N"
     printf '     Только Yandex для .ru\n'
     printf '     MTU + NTP + sysctl + Go\n\n'
-    printf '  %s5) Семейный%s\n' "$W" "$N"
+    printf '  %b5) Семейный%b\n' "$W" "$N"
     printf '     AdGuard Fam + CF Fam + CleanBrows Fam\n'
     printf '     РУ: Yandex Family\n\n'
-    printf '  %s6) Приватный%s\n' "$W" "$N"
+    printf '  %b6) Приватный%b\n' "$W" "$N"
     printf '     AdGuard Unf + Mullvad + Quad9 Unsec\n\n'
-    printf '  %s7) Чистый (без обхода)%s\n' "$W" "$N"
+    printf '  %b7) Чистый (без обхода)%b\n' "$W" "$N"
     printf '     CF + Google + Quad9 + OpenDNS\n\n'
-    printf '  %s8) Быстрый (минимальные пинги)%s\n' "$W" "$N"
+    printf '  %b8) Быстрый (минимальные пинги)%b\n' "$W" "$N"
     printf '     Mafioznik + Comss.ru + DNS.403 + BlueDNS\n\n'
-    printf '  %sEnter%s = отмена\n\n' "$C" "$N"
+    printf '  %bEnter%b = отмена\n\n' "$C" "$N"
     printf 'Выбор: '
     safe_read choice; [ -z "$choice" ] && return
 
@@ -449,10 +469,10 @@ menu_profile_default() {
            SLOT_5=""; SLOT_6=""; SLOT_RU="yandex"; SLOT_RU_2=""; BLOCK_QUIC="0" ;;
         8) SLOT_1="mafioznik"; SLOT_2="comss_ru"; SLOT_3="dns_403"; SLOT_4="bluedns"
            SLOT_5=""; SLOT_6=""; SLOT_RU="yandex"; SLOT_RU_2="" ;;
-        *) printf '%s[!] Неверный%s\n' "$R" "$N"; sleep 1; return ;;
+        *) printf '%b[!] Неверный%b\n' "$R" "$N"; sleep 1; return ;;
     esac
     save_config
-    printf '%s[✓] Профиль сохранён%s\n' "$G" "$N"
+    printf '%b[✓] Профиль сохранён%b\n' "$G" "$N"
     printf 'Применить? [y/Enter=да, n=нет]: '
     safe_read confirm
     case "$confirm" in n|N) printf 'Примените через пункт 8.\n'; sleep 2 ;; *) apply_settings ;; esac
@@ -463,19 +483,19 @@ menu_profile_default() {
 # ============================================================
 menu_test_dns() {
     flush_stdin; clear_screen
-    printf '%s========================================%s\n' "$B" "$N"
-    printf '%s  🔍 Тест всех DNS (независимо от DoH)%s\n' "$B" "$N"
-    printf '%s========================================%s\n\n' "$B" "$N"
-    printf '%sРезолв через bootstrap-IP + curl --resolve%s\n\n' "$Y" "$N"
+    printf '%b========================================%b\n' "$B" "$N"
+    printf '%b  🔍 Тест всех DNS (независимо от DoH)%b\n' "$B" "$N"
+    printf '%b========================================%b\n\n' "$B" "$N"
+    printf '%bРезолв через bootstrap-IP + curl --resolve%b\n\n' "$Y" "$N"
     printf '%-20s %-8s %-9s %-9s %s\n' "DNS" "Тип" "Статус" "Скорость" "Примечание"
-    printf '%s---------------------------------------------------------------------------%s\n' "$C" "$N"
+    printf '%b---------------------------------------------------------------------------%b\n' "$C" "$N"
     > "$TEST_RESULTS"
     grep -v '^#' "$DNS_CATALOG" | grep '|' | while IFS='|' read -r id name url dtype; do
         [ -z "$id" ] && continue
         host=$(printf '%s' "$url" | sed 's|^https://||; s|/.*$||')
         ip=$(resolve_host "$host")
         if [ -z "$ip" ]; then
-            printf '%-20s %-8s %sFAIL%s   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "bootstrap"
+            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "bootstrap"
             echo "${id}|0|FAIL" >> "$TEST_RESULTS"; continue
         fi
         t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 5 \
@@ -484,18 +504,18 @@ menu_test_dns() {
         if [ -n "$t" ] && [ "$t" != "0.000000" ]; then
             ms=$(echo "$t" | awk '{printf "%.0f", $1 * 1000}')
             [ "$ms" -lt 100 ] && note="Быстрый" || { [ "$ms" -lt 300 ] && note="Норм" || note="Медленный"; }
-            printf '%-20s %-8s %sOK%s     %-9s %s\n' "$name" "$dtype" "$G" "$N" "${ms}ms" "$note"
+            printf '%-20s %-8s %bOK%b     %-9s %s\n' "$name" "$dtype" "$G" "$N" "${ms}ms" "$note"
             echo "${id}|${ms}|OK" >> "$TEST_RESULTS"
         else
-            printf '%-20s %-8s %sFAIL%s   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "DoH"
+            printf '%-20s %-8s %bFAIL%b   %-9s %s\n' "$name" "$dtype" "$R" "$N" "-" "DoH"
             echo "${id}|0|FAIL" >> "$TEST_RESULTS"
         fi
     done
-    echo ""; printf '%s---------------------------------------------------------------------------%s\n' "$C" "$N"
+    echo ""; printf '%b---------------------------------------------------------------------------%b\n' "$C" "$N"
     total=$(wc -l < "$TEST_RESULTS" 2>/dev/null)
     ok=$(grep -c '|OK' "$TEST_RESULTS" 2>/dev/null)
     fail=$(grep -c '|FAIL' "$TEST_RESULTS" 2>/dev/null)
-    printf 'Всего: %s | %sOK: %s%s | %sFAIL: %s%s\n' "$total" "$G" "$ok" "$N" "$R" "$fail" "$N"
+    printf 'Всего: %s | %bOK: %s%b | %bFAIL: %s%b\n' "$total" "$G" "$ok" "$N" "$R" "$fail" "$N"
     printf '\nНажмите Enter...'; safe_read _
 }
 
@@ -516,9 +536,9 @@ select_dns_for_slot() {
     slot_num="$1"
     while true; do
         flush_stdin; clear_screen; build_select_list
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  Выбор DNS для слота #%s%s\n' "$B" "$slot_num" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  Выбор DNS для слота #%s%b\n' "$B" "$slot_num" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
         case "$SELECT_FILTER" in bypass) fstr="${G}ОБХОД${N}" ;; clean) fstr="${C}ЧИСТЫЕ${N}" ;; *) fstr="${W}все${N}" ;; esac
         printf 'Фильтр: %b (95=переключить)\n\n' "$fstr"
         i=1
@@ -531,17 +551,17 @@ select_dns_for_slot() {
                 ms=$(printf '%s' "$tr_line" | cut -d'|' -f2)
                 st=$(printf '%s' "$tr_line" | cut -d'|' -f3)
                 if [ "$st" = "OK" ]; then
-                    printf '  %2d) %-18s %b %s%5sms%s\n' "$i" "$name" "$tag" "$G" "$ms" "$N"
+                    printf '  %2d) %-18s %b %b%5sms%b\n' "$i" "$name" "$tag" "$G" "$ms" "$N"
                 else
-                    printf '  %2d) %-18s %b %sFAIL%s\n' "$i" "$name" "$tag" "$R" "$N"
+                    printf '  %2d) %-18s %b %bFAIL%b\n' "$i" "$name" "$tag" "$R" "$N"
                 fi
             else
-                printf '  %2d) %-18s %b %s(нет теста)%s\n' "$i" "$name" "$tag" "$Y" "$N"
+                printf '  %2d) %-18s %b %b(нет теста)%b\n' "$i" "$name" "$tag" "$Y" "$N"
             fi
             i=$((i+1))
         done < /tmp/.dns_sel
         echo ""
-        printf '  %s99) Очистить  98) Свой URL  95) Фильтр  Enter) Отмена%s\n\n' "$C" "$N"
+        printf '  %b99) Очистить  98) Свой URL  95) Фильтр  Enter) Отмена%b\n\n' "$C" "$N"
         printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             99) eval "SLOT_${slot_num}=\"\""; save_config; return ;;
@@ -551,7 +571,7 @@ select_dns_for_slot() {
                if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "$total" ] 2>/dev/null; then
                    sel_id=$(sed -n "${choice}p" /tmp/.dns_sel | cut -d'|' -f1)
                    eval "SLOT_${slot_num}=\"$sel_id\""; save_config; return
-               fi; printf '%s[!]%s\n' "$R" "$N"; sleep 1 ;;
+               fi; printf '%b[!]%b\n' "$R" "$N"; sleep 1 ;;
         esac
     done
 }
@@ -560,29 +580,29 @@ menu_slots() {
     flush_stdin
     while true; do
         clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  Настройка слотов DNS%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
-        printf '%sИнтернет:%s\n' "$Y" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  Настройка слотов DNS%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
+        printf '%bИнтернет:%b\n' "$Y" "$N"
         for s in 1 2 3 4 5 6; do
             eval "_v=\$SLOT_$s"
             printf '  %d) %s\n' "$s" "$(get_dns_name "$_v")"
         done
-        printf '\n%sРунет:%s\n' "$Y" "$N"
+        printf '\n%bРунет:%b\n' "$Y" "$N"
         printf '  7) РУ   (5059): %s\n' "$(get_dns_name "$SLOT_RU")"
         printf '  8) РУ-2 (5060): %s\n' "$(get_dns_name "$SLOT_RU_2")"
         echo ""
         check_duplicates && {
-            printf '%s⚠ Дубли URL! При применении лишние будут пропущены.%s\n' "$Y" "$N"
+            printf '%b⚠ Дубли URL! При применении лишние будут пропущены.%b\n' "$Y" "$N"
             while read -r dupe_url; do printf '  • %s\n' "$dupe_url"; done < /tmp/.dns_dupes
             echo ""
         }
-        printf '  %sEnter) Назад%s\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) select_dns_for_slot "1" ;; 2) select_dns_for_slot "2" ;; 3) select_dns_for_slot "3" ;;
             4) select_dns_for_slot "4" ;; 5) select_dns_for_slot "5" ;; 6) select_dns_for_slot "6" ;;
             7) select_dns_for_slot "RU" ;; 8) select_dns_for_slot "RU_2" ;;
-            *) printf '%s[!]%s\n' "$R" "$N"; sleep 1 ;;
+            *) printf '%b[!]%b\n' "$R" "$N"; sleep 1 ;;
         esac
     done
 }
@@ -591,13 +611,13 @@ menu_bootstrap() {
     flush_stdin
     while true; do
         clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  Bootstrap DNS%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
-        printf 'Текущий: %s%s%s\n\n' "$Y" "$BOOTSTRAP_DNS" "$N"
-        printf '  %s1)%s Полный 10 IP [рек]\n' "$G" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  Bootstrap DNS%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
+        printf 'Текущий: %b%s%b\n\n' "$Y" "$BOOTSTRAP_DNS" "$N"
+        printf '  %b1)%b Полный 10 IP [рек]\n' "$G" "$N"
         printf '  2) РФ (4 IP)\n  3) Yandex\n  4) AdGuard\n  5) Вручную\n'
-        printf '  %sEnter) Назад%s\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,1.1.1.1,1.0.0.1,8.8.8.8,8.8.4.4,9.9.9.9,149.112.112.112" ;;
             2) BOOTSTRAP_DNS="77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15" ;;
@@ -614,15 +634,15 @@ menu_ntp() {
     flush_stdin
     while true; do
         clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  ⏰ NTP серверы (ТОЛЬКО IP)%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
-        printf 'Текущий: %s%s%s\n\n' "$Y" "$(get_ntp_preset_name "$NTP_PRESET")" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  ⏰ NTP серверы (ТОЛЬКО IP)%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
+        printf 'Текущий: %b%s%b\n\n' "$Y" "$(get_ntp_preset_name "$NTP_PRESET")" "$N"
         for srv in $(get_ntp_servers "$NTP_PRESET" "$NTP_CUSTOM"); do printf '  • %s\n' "$srv"; done
         echo ""
-        printf '  %s1)%s Смешанный [рек]  2) CF  3) Google  4) Pool\n' "$G" "$N"
+        printf '  %b1)%b Смешанный [рек]  2) CF  3) Google  4) Pool\n' "$G" "$N"
         printf '  5) ВНИИФТРИ  6) RU  7) DHCP  8) Свой\n'
-        printf '  %sEnter) Назад%s\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) NTP_PRESET="mixed" ;; 2) NTP_PRESET="cloudflare" ;; 3) NTP_PRESET="google" ;;
             4) NTP_PRESET="ntp_pool" ;; 5) NTP_PRESET="ru_vniiftri" ;; 6) NTP_PRESET="ru_ps" ;;
@@ -636,9 +656,9 @@ menu_extras() {
     flush_stdin
     while true; do
         clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  Дополнительные настройки%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  Дополнительные настройки%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
         [ "$BALANCER_ENABLED" = "1" ] && b1="${G}[✓]${N}" || b1="${R}[ ]${N}"
         [ "$TLD_RU_ENABLED" = "1" ] && b2="${G}[✓]${N}" || b2="${R}[ ]${N}"
         [ "$BLOCK_QUIC" = "1" ] && b3="${G}[✓]${N}" || b3="${R}[ ]${N}"
@@ -653,8 +673,8 @@ menu_extras() {
         printf '  5) %b NTP Redirect\n' "$b5"
         printf '  6) %b Sysctl\n' "$b6"
         printf '  7) %b Go-opt\n' "$b7"
-        printf '\n  8) %s→ NTP: %s%s\n' "$Y" "$(get_ntp_preset_name "$NTP_PRESET")" "$N"
-        printf '  %sEnter) Назад%s\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '\n  8) %b→ NTP: %s%b\n' "$Y" "$(get_ntp_preset_name "$NTP_PRESET")" "$N"
+        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) [ "$BALANCER_ENABLED" = "1" ] && BALANCER_ENABLED="0" || BALANCER_ENABLED="1"; save_config ;;
             2) [ "$TLD_RU_ENABLED" = "1" ] && TLD_RU_ENABLED="0" || TLD_RU_ENABLED="1"; save_config ;;
@@ -672,13 +692,13 @@ menu_antiblock() {
     flush_stdin
     while true; do
         clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  Anti-block%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  Anti-block%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
         grep "bogus-nxdomain=" /etc/dnsmasq.d/anti-block.conf 2>/dev/null | sed 's/bogus-nxdomain=/  /' || printf '  (пусто)\n'
         echo ""
         printf '  1) Добавить  2) Удалить  3) Сброс к эталону\n'
-        printf '  %sEnter) Назад%s\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
+        printf '  %bEnter) Назад%b\n' "$C" "$N"; printf 'Выбор: '; safe_read choice; [ -z "$choice" ] && return
         case "$choice" in
             1) printf 'IP: '; safe_read ip; [ -n "$ip" ] && { echo "bogus-nxdomain=$ip" >> /etc/dnsmasq.d/anti-block.conf; /etc/init.d/dnsmasq restart; } ;;
             2) printf 'IP: '; safe_read ip; [ -n "$ip" ] && { sed -i "/bogus-nxdomain=$ip/d" /etc/dnsmasq.d/anti-block.conf; /etc/init.d/dnsmasq restart; } ;;
@@ -706,9 +726,9 @@ AB
 # ============================================================
 apply_settings() {
     flush_stdin; clear_screen
-    printf '%s========================================%s\n' "$B" "$N"
-    printf '%s  ⚡ Применение настроек%s\n' "$B" "$N"
-    printf '%s========================================%s\n\n' "$B" "$N"
+    printf '%b========================================%b\n' "$B" "$N"
+    printf '%b  ⚡ Применение настроек%b\n' "$B" "$N"
+    printf '%b========================================%b\n\n' "$B" "$N"
 
     printf '[1/11] Бэкапы...\n'
     [ ! -d /etc/config/backup-original ] && {
@@ -795,7 +815,7 @@ AB
         eval "_v=\$SLOT_$_s"; [ -z "$_v" ] && return
         _u=$(get_dns_url "$_v"); [ -z "$_u" ] && return
         if grep -qxF "$_u" /tmp/.added_urls 2>/dev/null; then
-            printf '  %s[~] Пропуск (дубль): %s%s\n' "$Y" "$(get_dns_name "$_v")" "$N"
+            printf '  %b[~] Пропуск (дубль): %s%b\n' "$Y" "$(get_dns_name "$_v")" "$N"
             return
         fi
         printf '%s\n' "$_u" >> /tmp/.added_urls
@@ -805,7 +825,7 @@ AB
         uci set https-dns-proxy.@https-dns-proxy[-1].resolver_url="$_u"
         uci set https-dns-proxy.@https-dns-proxy[-1].request_timeout='2'
         uci set https-dns-proxy.@https-dns-proxy[-1].bootstrap_dns="$BOOTSTRAP_DNS"
-        printf '  %s[+] %s (порт %s)%s\n' "$G" "$(get_dns_name "$_v")" "$_p" "$N"
+        printf '  %b[+] %s (порт %s)%b\n' "$G" "$(get_dns_name "$_v")" "$_p" "$N"
     }
     for s in 1 2 3 4 5 6; do add_doh "$s" "$((5052 + s))"; done
     [ -n "$SLOT_RU" ] && add_doh "RU" "5059"
@@ -875,7 +895,7 @@ RB
 
     proc_count=$(ps | grep https-dns-proxy | grep -v grep | wc -l)
     added_count=$(wc -l < /tmp/.added_urls 2>/dev/null || echo 0)
-    printf '\n%s✓ Применено! DoH: %s проц., уникальных URL: %s%s\n' "$G" "$proc_count" "$added_count" "$N"
+    printf '\n%b✓ Применено! DoH: %s проц., уникальных URL: %s%b\n' "$G" "$proc_count" "$added_count" "$N"
     printf 'Нажмите Enter...'; safe_read _
 }
 
@@ -884,31 +904,31 @@ RB
 # ============================================================
 menu_status() {
     flush_stdin; clear_screen
-    printf '%s========================================%s\n' "$B" "$N"
-    printf '%s  📊 Состояние + диагностика%s\n' "$B" "$N"
-    printf '%s========================================%s\n\n' "$B" "$N"
+    printf '%b========================================%b\n' "$B" "$N"
+    printf '%b  📊 Состояние + диагностика%b\n' "$B" "$N"
+    printf '%b========================================%b\n\n' "$B" "$N"
     a=$(uci -q get dhcp.@dnsmasq[0].allservers)
-    [ "$a" = "1" ] && printf '%s[✓] Балансировщик ВКЛ%s\n' "$G" "$N" || printf '%s[~] Балансировщик ВЫКЛ%s\n' "$Y" "$N"
+    [ "$a" = "1" ] && printf '%b[✓] Балансировщик ВКЛ%b\n' "$G" "$N" || printf '%b[~] Балансировщик ВЫКЛ%b\n' "$Y" "$N"
     echo ""
-    printf '%sdnsmasq:%s\n' "$C" "$N"
-    pgrep dnsmasq >/dev/null 2>&1 && printf '  %s[✓] Запущен%s\n' "$G" "$N" || printf '  %s[✗] НЕ запущен!%s\n' "$R" "$N"
+    printf '%bdnsmasq:%b\n' "$C" "$N"
+    pgrep dnsmasq >/dev/null 2>&1 && printf '  %b[✓] Запущен%b\n' "$G" "$N" || printf '  %b[✗] НЕ запущен!%b\n' "$R" "$N"
     echo ""
-    printf '%sDoH процессы:%s\n' "$C" "$N"
+    printf '%bDoH процессы:%b\n' "$C" "$N"
     pc=$(ps | grep https-dns-proxy | grep -v grep | wc -l)
-    [ "$pc" -eq 0 ] && printf '  %s[✗] Нет процессов!%s\n' "$R" "$N" || {
-        printf '  %s[✓] %s процессов:%s\n' "$G" "$pc" "$N"
+    [ "$pc" -eq 0 ] && printf '  %b[✗] Нет процессов!%b\n' "$R" "$N" || {
+        printf '  %b[✓] %s процессов:%b\n' "$G" "$pc" "$N"
         ps | grep https-dns-proxy | grep -v grep | awk '{p="";u="";for(i=1;i<=NF;i++){if($i=="-p")p=$(i+1);if($i=="-r")u=$(i+1)}if(p&&u)printf "    %s -> %s\n",p,u}'
     }
     echo ""
-    printf '%sBootstrap:%s\n' "$C" "$N"
+    printf '%bBootstrap:%b\n' "$C" "$N"
     ps | grep https-dns-proxy | grep -v grep | head -1 | awk '{for(i=1;i<=NF;i++)if($i=="-b"){printf "  %s\n",$(i+1);exit}}'
-    printf '\n%sNTP:%s %s\n' "$C" "$N" "$(get_ntp_preset_name "$NTP_PRESET")"
+    printf '\n%bNTP:%b %s\n' "$C" "$N" "$(get_ntp_preset_name "$NTP_PRESET")"
     echo ""
-    printf '%sResolution:%s\n' "$C" "$N"
+    printf '%bResolution:%b\n' "$C" "$N"
     for dom in ya.ru chatgpt.com youtube.com instagram.com; do
         ip=$(timeout 3 nslookup "$dom" 127.0.0.1 2>/dev/null | grep -vE '127\.0\.0\.|0\.0\.0\.0' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
-        [ -n "$ip" ] && printf '  %-18s -> %s%s%s\n' "$dom" "$G" "$ip" "$N" \
-            || printf '  %-18s -> %sNO_ANSWER%s\n' "$dom" "$R" "$N"
+        [ -n "$ip" ] && printf '  %-18s -> %b%s%b\n' "$dom" "$G" "$ip" "$N" \
+            || printf '  %-18s -> %bNO_ANSWER%b\n' "$dom" "$R" "$N"
     done
     echo ""; printf 'Нажмите Enter...'; safe_read _
 }
@@ -919,24 +939,24 @@ menu_status() {
 main_menu() {
     while true; do
         flush_stdin; clear_screen
-        printf '%s========================================%s\n' "$B" "$N"
-        printf '%s  🌐 DNS Manager v%s%s\n' "$B" "$VERSION" "$N"
-        printf '%s  Безопасный сток | Анти-дубли | IP-NTP%s\n' "$B" "$N"
-        printf '%s========================================%s\n\n' "$B" "$N"
-        printf '%sИнтернет:%s\n' "$Y" "$N"
+        printf '%b========================================%b\n' "$B" "$N"
+        printf '%b  🌐 DNS Manager v%s%b\n' "$B" "$VERSION" "$N"
+        printf '%b  Безопасный сток | Анти-дубли | IP-NTP%b\n' "$B" "$N"
+        printf '%b========================================%b\n\n' "$B" "$N"
+        printf '%bИнтернет:%b\n' "$Y" "$N"
         for s in 1 2 3 4 5 6; do
             eval "_v=\$SLOT_$s"
             printf '  %d) %s\n' "$s" "$(get_dns_name "$_v")"
         done
-        printf '%sРунет:%s\n' "$Y" "$N"
+        printf '%bРунет:%b\n' "$Y" "$N"
         printf '  РУ) %s\n' "$(get_dns_name "$SLOT_RU")"
         printf '  РУ2) %s\n' "$(get_dns_name "$SLOT_RU_2")"
-        check_duplicates && printf '\n  %s⚠ Есть дубли URL!%s\n' "$Y" "$N"
+        check_duplicates && printf '\n  %b⚠ Есть дубли URL!%b\n' "$Y" "$N"
         echo ""
-        printf '  %s1) ⚡ Профили%s    2) Слоты       3) Тест DNS\n' "$G" "$N"
+        printf '  %b1) ⚡ Профили%b    2) Слоты       3) Тест DNS\n' "$G" "$N"
         printf '  4) Bootstrap     5) Доп.настр.  6) Anti-block\n'
-        printf '  7) Состояние     %s8) ⚡ Применить%s  9) Откат\n' "$G" "$N"
-        printf '  %sS) 🔄 СТОК%s       0) Выход\n\n' "$R" "$N"
+        printf '  7) Состояние     %b8) ⚡ Применить%b  9) Откат\n' "$G" "$N"
+        printf '  %bS) 🔄 СТОК%b       0) Выход\n\n' "$R" "$N"
         printf 'Выбор: '
         safe_read choice
         case "$choice" in
@@ -944,7 +964,7 @@ main_menu() {
             5) menu_extras ;; 6) menu_antiblock ;; 7) menu_status ;; 8) apply_settings ;;
             9) [ -f /root/rollback-dns.sh ] && sh /root/rollback-dns.sh || printf 'Нет отката\n'; safe_read _ ;;
             S|s|Ы|ы) menu_reset_to_stock ;; 0) exit 0 ;;
-            *) printf '%s[!]%s\n' "$R" "$N"; sleep 1 ;;
+            *) printf '%b[!]%b\n' "$R" "$N"; sleep 1 ;;
         esac
     done
 }
