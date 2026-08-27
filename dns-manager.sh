@@ -63,19 +63,15 @@ warn_msg() { log_msg "WARN $*"; printf "${C_YELLOW}[!] %s${C_NC}\n" "$*"; }
 err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
-    _prompt="$1"
-    while :; do
-        printf "\n${C_WHITE}%s${C_NC} [y/n] (Enter = y): " "$_prompt"
-        read -r _ans
-        case "$_ans" in
-            # y/Y, д/Д ("да"), н/Н (клавиша 'Y' в русской раскладке) и Enter
-            y|Y|д|Д|н|Н|1|'') return 0 ;;
-            # n/N, т/Т (клавиша 'N' в русской раскладке)
-            n|N|т|Т|2)        return 1 ;;
-            *) printf "${C_YELLOW}Введите y или n.${C_NC}\n" ;;
-        esac
-    done
+_prompt="$1"
+printf "${C_WHITE}%s [y] Да / [любая другая клавиша] Отмена: " "$_prompt"
+read -r _ans
+case "$_ans" in
+y|Y|д|Д) return 0 ;;
+*) return 1 ;;
+esac
 }
+
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
 clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'; printf '\033[1;37m'; }
 menu_header() {
