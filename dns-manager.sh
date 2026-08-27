@@ -873,10 +873,15 @@ ensure_doh_slot() {
     # 4. Создаем новую секцию с нуля
     local sec
     sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
+    
+    # Берем только первый IP-адрес на случай, если там несколько через пробел
+    local b_ip="${BOOTSTRAP_DNS%% *}"
+    [ -z "$b_ip" ] && b_ip="1.1.1.1" # Дефолтный страховочный IP
+
     uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
     uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
     uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
-    uci set "https-dns-proxy.$sec.bootstrap_dns=$BOOTSTRAP_DNS" || return 1
+    uci set "https-dns-proxy.$sec.bootstrap_dns=$b_ip" || return 1
     uci set "https-dns-proxy.$sec.request_timeout=2" || return 1
     uci set "https-dns-proxy.$sec.dns_manager=1" || return 1
     
