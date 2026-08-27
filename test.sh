@@ -50,6 +50,7 @@ C_SECTION='\033[1;37m'
 log_msg() {
 mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
 printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null
+
 }
 log_tx() {
 printf 'TX|%s|%s|%s|%s|%s|%s\n' "$TX_ID" "$(date +%s)" "$1" "$2" "$3" "$4" "$5" >> "$TX_LOG" 2>/dev/null
