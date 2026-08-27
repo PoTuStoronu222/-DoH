@@ -1175,46 +1175,50 @@ tx_commit() {
 # ----- Hybrid port reconciler -----
 hybrid_reconcile_existing() {
     [ "$DNS_PROFILE" = hybrid ] || return 0
-    # Remove only duplicated manager-owned sections for the same URL; keep foreign/unknown untouched.
+    
+    # 1. Удаляем только дубликаты управляемых менеджером секций для каждого URL
     for id in mafioznik comss_bypass astracat malw_link comss_ru vppay yandex_ru; do
-        url="$(normalize_url "$(dns_url "$id")")"
+        local url="$(normalize_url "$(dns_url "$id")")"
         [ -n "$url" ] || continue
-        seen=""
-        i=0
-        while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
-            m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
-            u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
-            if [ "$m" = 1 ] && [ "$u" = "$url" ]; then
-                if [ -n "$seen" ]; then
-                   uci -q delete "https-dns-proxy.@https-dns-proxy[$i]" || { i=$((i+1)); continue; }
-i=0; seen=1; continue
+        local first_found=""
+        
+        for sec in $(uci show https-dns-proxy 2>/dev/null | awk -F'[.=]' '/\..*=https-dns-proxy$/ {print $2}'); do
+            local m="$(uci -q get "https-dns-proxy.$sec.dns_manager" 2>/dev/null)"
+            local u="$(normalize_url "$(uci -q get "https-dns-proxy.$sec.resolver_url" 2>/dev/null)")"
+            
+            if [ "$m" = "1" ] && [ "$u" = "$url" ]; then
+                if [ -z "$first_found" ]; then
+                    first_found="$sec"
+                else
+                    uci -q delete "https-dns-proxy.$sec"
                 fi
-                seen="$i"
             fi
-            i=$((i+1))
         done
     done
 
-    # First move manager-owned objects that block another selected role to temporary free ports.
+    # 2. Перемещаем менеджерские объекты, блокирующие другие выбранные роли, на временные свободные порты
     for slot in 1 2 3 4 5 6 RU; do
         eval "want=\${SLOT_$slot}"
         [ -n "$want" ] || continue
-        target="$(hybrid_desired_port "$slot")"
+        local target="$(hybrid_desired_port "$slot")"
         [ -n "$target" ] || continue
-        i=0
-        while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
-            m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
-            p="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].listen_port" 2>/dev/null)"
-            u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
-            if [ "$m" = 1 ] && [ "$p" = "$target" ] && [ "$u" != "$(normalize_url "$(dns_url "$want")")" ]; then
+        
+        local want_url="$(normalize_url "$(dns_url "$want")")"
+
+        for sec in $(uci show https-dns-proxy 2>/dev/null | awk -F'[.=]' '/\..*=https-dns-proxy$/ {print $2}'); do
+            local m="$(uci -q get "https-dns-proxy.$sec.dns_manager" 2>/dev/null)"
+            local p="$(uci -q get "https-dns-proxy.$sec.listen_port" 2>/dev/null)"
+            local u="$(normalize_url "$(uci -q get "https-dns-proxy.$sec.resolver_url" 2>/dev/null)")"
+            
+            if [ "$m" = "1" ] && [ "$p" = "$target" ] && [ "$u" != "$want_url" ]; then
                 free_port || return 1
-                tmp="$FREE_PORT_RESULT"
+                local tmp="$FREE_PORT_RESULT"
                 [ "$tmp" != "$target" ] || { free_port || return 1; tmp="$FREE_PORT_RESULT"; }
-                uci set "https-dns-proxy.@https-dns-proxy[$i].listen_port=$tmp" || return 1
+                uci set "https-dns-proxy.$sec.listen_port"="$tmp" || return 1
             fi
-            i=$((i+1))
         done
     done
+
     uci commit https-dns-proxy 2>/dev/null || return 1
     return 0
 }
