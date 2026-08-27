@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager v6.6 FINAL — Hybrid SmartDNS
+# DNS Manager v1.0 — Hybrid SmartDNS
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 # Ничего не применяет без действия пользователя.
@@ -18,7 +18,7 @@
 # ============================================================
 
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="7.0-FINAL-HYBRID"
+VERSION="1.0-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="$BASE_DIR/state"
