@@ -1291,6 +1291,7 @@ apply_settings() {
     # Остнавливаем сервис перед пересборкой UCI
     if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = hybrid ]; then
         /etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
+        sleep 3
     fi
 
     # Полностью очищаем старые инстансы DNS Manager в UCI, освобождая порты 5053-5059
@@ -1339,6 +1340,7 @@ apply_settings() {
     # nobody modified it after this transaction touched it.
     tx_snapshot_after_apply
 
+    sleep 1
     /etc/init.d/https-dns-proxy restart 2>/dev/null || true
     /etc/init.d/dnsmasq restart 2>/dev/null || true
     if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null; else /etc/init.d/firewall restart 2>/dev/null; fi
