@@ -1935,7 +1935,6 @@ main_menu() {
         printf "  https-dns-proxy: %b\n" "$(state_word "$HAS_HDP")"
         printf "  DoH обнаружено: ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
         [ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}⚠ force_dns стороннего DoH включён${C_NC}\n"
-        read -r
 
         printf "${C_BOLD}${C_PINK}🚀 БЫСТРАЯ НАСТРОЙКА${C_NC}\n"
         printf "  ${C_PINK}[1]${C_NC} 🚀 ${C_BOLD}МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД${C_NC}\n"
