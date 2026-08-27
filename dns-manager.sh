@@ -1722,10 +1722,38 @@ module_state() {
     esac
 }
 
+# --- Вспомогательные функции точечного применения ---
+
+toggle_and_apply_dnsmasq() {
+    reconcile_dnsmasq >/dev/null 2>&1
+    /etc/init.d/dnsmasq restart >/dev/null 2>&1
+    save_config
+}
+
+apply_quic_toggle() {
+    if [ "$BLOCK_QUIC" = 1 ]; then
+        apply_quic >/dev/null 2>&1
+    else
+        # Вызов функции удаления правил QUIC из iptables/nftables
+        remove_quic >/dev/null 2>&1 || remove_quic_rules >/dev/null 2>&1
+    fi
+    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+    save_config
+}
+
+apply_mtu_toggle() {
+    uci -q set firewall.@defaults[0].mtu_fix="$MTU_FIX"
+    uci commit firewall
+    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+    save_config
+}
+
+# --- Основное меню Дополнительных настроек ---
+
 menu_extras() {
     while :; do
         clear_screen
-        printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║          🔧 Дополнительные настройки         ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n"
+        printf "${C_WHITE}╔══════════════════════════════════════════════╗\n║           🔧 Дополнительные настройки         ║\n╚══════════════════════════════════════════════╝${C_NC}\n\n"
         printf "  ${C_YELLOW}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(state_word "$BALANCER_ENABLED")"
         printf "  ${C_YELLOW}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(state_word "$TLD_RU_ENABLED")"
         printf "  ${C_YELLOW}[3]${C_NC} QUIC: %b\n" "$(state_word "$BLOCK_QUIC")"
@@ -1737,17 +1765,45 @@ menu_extras() {
         printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "; safe_read c
         [ -z "$c" ] && return
         case "$c" in
-            1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1;;
-            2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED";;
-            3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1;;
-            4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1;;
-            5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1;;
-            6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1;;
-            7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1;;
-            8) menu_bogus;;
-            *) return;;
+            1)
+                [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1
+                toggle_and_apply_dnsmasq
+                ;;
+            2)
+                [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1
+                TLD_SPLIT="$TLD_RU_ENABLED"
+                toggle_and_apply_dnsmasq
+                ;;
+            3)
+                [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1
+                apply_quic_toggle
+                ;;
+            4)
+                [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1
+                apply_mtu_toggle
+                ;;
+            5)
+                [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
+                [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1
+                save_config
+                ;;
+            6)
+                [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
+                [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1
+                save_config
+                ;;
+            7)
+                [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
+                [ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1
+                save_config
+                ;;
+            8)
+                menu_bogus
+                ;;
+            *)
+                return
+                ;;
         esac
-        save_config
     done
 }
 
