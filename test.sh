@@ -1605,7 +1605,6 @@ safe_read a
 case "$a" in
 1)
 if auto_fill_slots "$goal"; then
-pause
 apply_settings
 fi
 ;;
@@ -1999,7 +1998,6 @@ test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
 DNS_PROFILE="hybrid"
 auto_fill_slots bypass
-pause
 SLOT_RU="yandex_ru"
 SLOT_RU_2=""
 TLD_RU_ENABLED=1
@@ -2061,13 +2059,13 @@ safe_read c
         case "$c" in
             1) quick_max_bypass ;;
             # Добавлен pause после каждого вызова menu_best_actions
-            2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ"; pause ;;
-            3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ"; pause ;;
-            4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ"; pause ;;
-            5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ"; pause ;;
+            2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ" ;;
+            3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ" ;;
+            4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ" ;;
+            5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ" ;;
             6) show_best ;;
             7) show_map ;;
-            8) test_dns_catalog; show_tests ;;
+            8) test_dns_catalog ;;
             9) menu_slots ;;
             10) menu_bootstrap ;;
             11) menu_ntp ;;
