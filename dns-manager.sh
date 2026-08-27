@@ -1776,18 +1776,18 @@ printf "  ${C_YELLOW}[8]${C_NC} IP-заглушки\n"
 printf "  ${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
 [ -z "$c" ] && return
 case "$c" in
-1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq;
-2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq; 
-3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle; 
-4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle; 
+1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq;;
+2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq;; 
+3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle;; 
+4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle;; 
 5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
-[ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config; 
+[ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config;; 
 6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
-[ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config; 
+[ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config;; 
 7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
-[ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config;
-8) menu_bogus ;;
-*) return ;;
+[ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config;;
+    8) menu_bogus ;;
+    *) return ;;
 esac
 done
 }
