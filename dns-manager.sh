@@ -1634,7 +1634,6 @@ auto_fill_slots() {
         for _c in bypass clean security privacy adblock family social regional; do
             awk -F'|' -v c="$_c" '$2==c{print}' "$_src" | head -n1 >> "$_div"
         done
-        awk -F'|' '$0!=""{print}' "$_div" >> "$_src.div"
         cat "$_div" 2>/dev/null > "$_src2"
         cat "$_src" 2>/dev/null >> "$_src2"
         : > "$_pool"
@@ -1680,6 +1679,7 @@ menu_best_actions() {
             1)
                 if auto_fill_slots "$goal"; then
                     apply_settings
+                    return
                 fi
                 ;;
             2)
