@@ -1728,25 +1728,44 @@ reconcile_dnsmasq >/dev/null 2>&1
 save_config
 }
 apply_quic_toggle() {
-if [ "$BLOCK_QUIC" = 1 ]; then
-apply_quic >/dev/null 2>&1
-else
-# Удаляем наши правила QUIC по имени
-for _rname in DnsMgr_QUIC_80 DnsMgr_QUIC_443 Block_UDP_80 Block_UDP_443; do
-while :; do
-_ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -1 | cut -d. -f2 | cut -d= -f1)"
-[ -z "$_ridx" ] && break
-uci -q delete "firewall.$_ridx"
-done
-done
-uci commit firewall >/dev/null 2>&1
-fi
-if [ "$SYS_FW" = "fw4" ]; then
-/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
-else
-/etc/init.d/firewall restart >/dev/null 2>&1
-fi
-save_config
+    # Шаг 1: Полная очистка всех возможных правил QUIC для избежания дублей
+    for _rname in DnsMgr_QUIC_80 DnsMgr_QUIC_443 Block_UDP_80 Block_UDP_443; do
+        while :; do
+            _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
+            [ -z "$_ridx" ] && break
+            uci -q delete "firewall.$_ridx"
+        done
+    done
+    
+    # Шаг 2: Создание новых правил только если нужно включить QUIC
+    if [ "$BLOCK_QUIC" = "1" ]; then
+        uci add firewall rule >/dev/null 2>&1
+        uci set firewall.@rule[-1].name='Block_UDP_80'
+        uci add_list firewall.@rule[-1].proto='udp'
+        uci set firewall.@rule[-1].src='lan'
+        uci set firewall.@rule[-1].dest='wan'
+        uci set firewall.@rule[-1].dest_port='80'
+        uci set firewall.@rule[-1].target='REJECT'
+        
+        uci add firewall rule >/dev/null 2>&1
+        uci set firewall.@rule[-1].name='Block_UDP_443'
+        uci add_list firewall.@rule[-1].proto='udp'
+        uci set firewall.@rule[-1].src='lan'
+        uci set firewall.@rule[-1].dest='wan'
+        uci set firewall.@rule[-1].dest_port='443'
+        uci set firewall.@rule[-1].target='REJECT'
+    fi
+    
+    uci commit firewall >/dev/null 2>&1
+    
+    # Перезагрузка фаервола
+    if [ "$SYS_FW" = "fw4" ]; then
+        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+    else
+        /etc/init.d/firewall restart >/dev/null 2>&1
+    fi
+    
+    save_config
 }
 apply_mtu_toggle() {
 uci -q set firewall.@defaults[0].mtu_fix="$MTU_FIX"
