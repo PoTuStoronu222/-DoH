@@ -63,21 +63,22 @@ confirm_action() {
     _prompt="$1"
 
     printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
-    printf "  ${C_GREEN}[✓] Y / y — Да, применить${C_NC}\n"
-    printf "  ${C_RED}[✗] N / n — Нет, назад${C_NC}\n"
+    printf "  ${C_GREEN}[✓] Y / y  или  Н / н — Да, применить${C_NC}\n"
+    printf "  ${C_RED}[✗] N / n  или  Т / т — Нет, назад${C_NC}\n"
+    printf "  ${C_WHITE}[Enter] — отмена / назад${C_NC}\n"
     printf "${C_YELLOW}Выбор: ${C_NC}"
 
     safe_read _ans
 
     case "$_ans" in
-        y|Y)
+        y|Y|н|Н|yes|YES|да|Да|ДА)
             return 0
             ;;
-        n|N|"")
+        n|N|т|Т|no|NO|нет|Нет|НЕТ|"")
             return 1
             ;;
         *)
-            warn_msg "Неверный выбор. Используйте Y — применить или N — назад."
+            warn_msg "Неверный выбор. Используйте Y/Н — Да или N/Т — Нет."
             return 1
             ;;
     esac
