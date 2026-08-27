@@ -3,7 +3,6 @@
 # DNS Manager v1.0 — Hybrid SmartDNS
 # Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
-# Ничего не применяет без действия пользователя.
 #
 # Функции:
 #   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
@@ -75,10 +74,6 @@ menu_header() {
     printf "${C_TITLE}╚════════════════════════════════════════════════════╝${C_NC}\n"
     printf "${C_GREEN}✓${C_NC} работает  ${C_RED}✗${C_NC} ошибка/выключено  ${C_YELLOW}⚠${C_NC} внимание  ${C_PINK}↻${C_NC} изменение  ${C_CYAN}ℹ${C_NC} информация\n\n"
 }
-
-# ----- Stream-safe execution -----
-# The caller already downloads test.sh. Do not download/re-execute another copy
-# from GitHub here; this avoids stale/cached double execution and broken pipes.
 
 preflight_readonly() {
     [ "$(id -u 2>/dev/null)" = 0 ] || { err_msg "Нужны права root."; exit 1; }
@@ -844,9 +839,8 @@ ensure_doh_slot() {
         claim_port_tx "$target" || return 1
     fi
 
-    uci add https-dns-proxy https-dns-proxy >/dev/null || return 1
-    sec='@https-dns-proxy[-1]'
-    uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
+    sec=$(uci add https-dns-proxy https-dns-proxy 2>/dev/null) || return 1
+    uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1"
     uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
     uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
     uci set "https-dns-proxy.$sec.bootstrap_dns=$BOOTSTRAP_DNS" || return 1
@@ -1671,13 +1665,19 @@ select_slot() {
     done < "$DNS_CATALOG"
     printf "\n${C_YELLOW}[99]${C_NC} Очистить   ${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
     [ -z "$c" ] && return
-    if [ "$c" = 99 ]; then eval "SLOT_$slot="; save_config; return; fi
+    if [ "$c" = "99" ]; then 
+        eval "SLOT_$slot=''"
+        save_config
+        return 
+    fi
     row="$(grep -v '^#' "$DNS_CATALOG" | sed -n "${c}p")"
     id="$(printf '%s' "$row" | cut -d'|' -f1)"
     [ -n "$id" ] || return
-    eval "SLOT_$slot=\"$id\""
+    # Безопасный eval без инъекций
+    eval "SLOT_$slot=\$id"
     save_config
 }
+
 menu_slots() {
     while :; do
         clear_screen
@@ -1729,9 +1729,11 @@ menu_bootstrap() {
     esac
     save_config
 }
+
 menu_bogus() {
     apply_bogus
 }
+
 module_state() {
     key="$1"; val="$2"
     [ "$val" = 1 ] || { printf 'ВЫКЛ'; return; }
@@ -1759,17 +1761,32 @@ apply_quic_toggle() {
     if [ "$BLOCK_QUIC" = 1 ]; then
         apply_quic >/dev/null 2>&1
     else
-        # Вызов функции удаления правил QUIC из iptables/nftables
-        remove_quic >/dev/null 2>&1 || remove_quic_rules >/dev/null 2>&1
+        # Встроенное безопасное удаление правил QUIC (избегаем missing function)
+        for RULE in Block_UDP_80 Block_UDP_443 DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
+            while :; do 
+                IDX=$(uci show firewall 2>/dev/null | grep "name='$RULE'" | cut -d. -f2 | cut -d= -f1 | head -n1)
+                [ -z "$IDX" ] && break
+                uci -q delete "firewall.$IDX" >/dev/null 2>&1
+            done
+        done
+        uci commit firewall >/dev/null 2>&1
     fi
-    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+    if [ "$SYS_FW" = "fw4" ]; then 
+        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+    else 
+        /etc/init.d/firewall restart >/dev/null 2>&1
+    fi
     save_config
 }
 
 apply_mtu_toggle() {
     uci -q set firewall.@defaults[0].mtu_fix="$MTU_FIX"
-    uci commit firewall
-    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+    uci commit firewall >/dev/null 2>&1
+    if [ "$SYS_FW" = "fw4" ]; then 
+        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+    else 
+        /etc/init.d/firewall restart >/dev/null 2>&1
+    fi
     save_config
 }
 
@@ -1790,44 +1807,18 @@ menu_extras() {
         printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "; safe_read c
         [ -z "$c" ] && return
         case "$c" in
-            1)
-                [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1
-                toggle_and_apply_dnsmasq
-                ;;
-            2)
-                [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1
-                TLD_SPLIT="$TLD_RU_ENABLED"
-                toggle_and_apply_dnsmasq
-                ;;
-            3)
-                [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1
-                apply_quic_toggle
-                ;;
-            4)
-                [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1
-                apply_mtu_toggle
-                ;;
-            5)
-                [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
-                [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1
-                save_config
-                ;;
-            6)
-                [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
-                [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1
-                save_config
-                ;;
-            7)
-                [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
-                [ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1
-                save_config
-                ;;
-            8)
-                menu_bogus
-                ;;
-            *)
-                return
-                ;;
+            1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq ;;
+            2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq ;;
+            3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle ;;
+            4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle ;;
+            5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
+               [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config ;;
+            6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
+               [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config ;;
+            7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
+               [ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config ;;
+            8) menu_bogus ;;
+            *) return ;;
         esac
     done
 }
@@ -1835,7 +1826,12 @@ menu_extras() {
 ensure_dependencies(){
     missing=""
     [ "$HAS_CURL" = yes ] || missing="$missing curl"
-    [ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
+    # Исправлено: для apk пакет называется bind-tools, для opkg - bind-dig
+    if [ "$PKG_MGR" = "apk" ]; then
+        [ "$HAS_DIG" = yes ] || missing="$missing bind-tools"
+    else
+        [ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
+    fi
     [ "$HAS_HDP" = yes ] || missing="$missing https-dns-proxy"
 
     CA_OK=no
@@ -1850,6 +1846,7 @@ ensure_dependencies(){
         fi
     fi
     [ "$CA_OK" = yes ] || missing="$missing ca-certificates"
+    [ "$HAS_DNSMASQ" = yes ] || missing="$missing dnsmasq"
     printf '%s\n' "$missing"
 }
 
@@ -1877,12 +1874,7 @@ menu_install() {
     printf "  CA-сертификаты    : %s\n" "$(state_word "$CA_OK")"
     printf "  dnsmasq           : %s\n\n" "$(state_word "$HAS_DNSMASQ")"
 
-    need=""
-    [ "$HAS_CURL" = no ] && need="$need curl"
-    [ "$HAS_DIG" = no ] && need="$need bind-dig"
-    [ "$HAS_HDP" = no ] && need="$need https-dns-proxy"
-    [ "$CA_OK" = no ] && need="$need ca-certificates"
-    [ "$HAS_DNSMASQ" = no ] && need="$need dnsmasq"
+    need="$(ensure_dependencies)"
 
     if [ -z "$need" ]; then
         ok_msg "Все обязательные компоненты уже установлены."
@@ -1897,7 +1889,7 @@ menu_install() {
     printf "\n"
 
     if confirm_action "Установить недостающие компоненты сейчас?"; then
-        if [ "$PKG_MGR" = apk ]; then
+        if [ "$PKG_MGR" = "apk" ]; then
             apk update && apk add $need
         else
             opkg update && opkg install $need
@@ -1981,23 +1973,21 @@ quick_max_bypass() {
     PORT_RU="$HYBRID_PORT_RU"; PORT_RU_2=""
     save_config
 
-    # Сразу переходим к итоговой подготовке и единственному подтверждению
     apply_settings
 }
 
 dependency_preflight(){
     run_discovery >/dev/null 2>&1 || true
-    title "📦 ПРОВЕРКА ЗАВИСИМОСТЕЙ"
+    printf "${C_TITLE}📦 ПРОВЕРКА ЗАВИСИМОСТЕЙ${C_NC}\n"
     printf '  curl              : '; bool_text "$HAS_CURL"; printf '\n'
     printf '  dig               : '; bool_text "$HAS_DIG"; printf '\n'
     printf '  https-dns-proxy   : '; bool_text "$HAS_HDP"; printf '\n'
     if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
-        printf '  CA-сертификаты    : %b✓ ВКЛ%b\n' "$C_GREEN" "$C_RESET"
+        printf '  CA-сертификаты    : %b✓ ВКЛ%b\n' "$C_GREEN" "$C_NC"
     else
-        printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_RESET"
+        printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_NC"
     fi
 }
-
 
 main_menu() {
     while :; do
