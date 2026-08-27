@@ -1892,23 +1892,8 @@ quick_max_bypass() {
     PORT_RU="$HYBRID_PORT_RU"; PORT_RU_2=""
     save_config
 
-    menu_header "🚀 ГОТОВЫЙ ПЛАН МАКСИМАЛЬНОГО ОБХОДА"
-    for s in 1 2 3 4 5 6; do
-        eval "_id=\${SLOT_$s}"
-        if [ -n "$_id" ]; then
-            printf "  ${C_GREEN}✓${C_NC} Слот %s: ${C_WHITE}%s${C_NC} → ${C_YELLOW}%s${C_NC}\n" "$s" "$(dns_name "$_id")" "$(hybrid_desired_port "$s")"
-        else
-            printf "  ${C_RED}✗${C_NC} Слот %s: подходящий DNS не найден\n" "$s"
-        fi
-    done
-    printf "  ${C_GREEN}✓${C_NC} RU: ${C_WHITE}%s${C_NC} → ${C_YELLOW}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "$HYBRID_PORT_RU"
-
-    if confirm_action "Применить этот готовый план?"; then
-        apply_settings
-    else
-        printf "${C_CYAN}ℹ План сохранён, но не применён.${C_NC}\n"
-        pause
-    fi
+    # Сразу переходим к итоговой подготовке и единственному подтверждению
+    apply_settings
 }
 
 dependency_preflight(){
