@@ -116,9 +116,7 @@ RU DNS
 Установка выполняется один раз:
 
 ```sh
-wget -q -O /usr/bin/dns-manager \
-  https://raw.githubusercontent.com/PoTuStoronu222/Openwrt-Smartdns-DoH/main/dns-manager.sh \
-  && chmod 755 /usr/bin/dns-manager
+sh <(wget -O - https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh)
 ```
 
 После установки менеджер запускается одной командой:
