@@ -1843,19 +1843,19 @@ menu_extras() {
         printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\nВыбор: "; safe_read c
         [ -z "$c" ] && return
         case "$c" in
-            1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq ;;
-            2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq ;;
-            3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle ;;
-            4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle ;;
-            5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
-               [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config ;;
-            6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
-               [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config ;;
-            7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
-               [ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config ;;
-            8) menu_bogus ;;
-            *) return ;;
-        esac
+        1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq; pause ;;
+        2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq; pause ;;
+        3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle; pause ;;
+        4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle; pause ;;
+        5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
+           [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config; pause ;;
+        6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
+           [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config; pause ;;
+        7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
+           [ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config; pause ;;
+        8) menu_bogus ;; 
+        *) return ;;
+    esac
     done
 }
 
@@ -2064,35 +2064,36 @@ main_menu() {
         printf "\n${C_YELLOW}Выбор:${C_NC} "
         safe_read c
         [ -z "$c" ] && { clear_screen; printf "${C_GREEN}DNS Manager завершён.${C_NC}\n"; exit 0; }
-        case "$c" in
-            1) quick_max_bypass;;
-            2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ";;
-            3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ";;
-            4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ";;
-            5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ";;
-            6) show_best;;
-            7) show_map;;
-            8) test_dns_catalog; show_tests;;
-            9) menu_slots;;
-            10) menu_bootstrap;;
-            11) menu_ntp;;
-            12) menu_extras;;
-            13) menu_status;;
-            14) apply_settings;;
-            15) menu_install;;
-            16)
-                clear_screen
-                menu_header "🔄 УДАЛЕНИЕ ТОЛЬКО DNS MANAGER"
-                warn_msg "Будут удалены только DoH-секции с dns_manager=1 и записи, ранее отмеченные как наши."
-                if confirm_action "Удалить только изменения DNS Manager?"; then
-                    rollback_ours
-                else
-                    info_msg "Отменено."
-                    pause
-                fi
-                ;;
-            *) warn_msg "Неизвестный пункт. Используйте номер меню или Enter."; pause;;
-        esac
+       case "$c" in
+        1) quick_max_bypass; pause ;;
+        2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ"; pause ;;
+        3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ"; pause ;;
+        4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ"; pause ;;
+        5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ"; pause ;;
+        6) show_best; pause ;;
+        7) show_map; pause ;;
+        8) test_dns_catalog; show_tests; pause ;;
+        9) menu_slots ;;       # Подменю (обычно управляют своими паузами)
+        10) menu_bootstrap ;;  # Подменю
+        11) menu_ntp ;;        # Подменю
+        12) menu_extras ;;     # Подменю
+        13) menu_status ;;     # Подменю / статус (если выводит текст и сразу уходит — тоже стоит добавить pause)
+        14) apply_settings; pause ;;
+        15) menu_install ;;    # Подменю
+        16)
+            clear_screen
+            menu_header "🔄 УДАЛЕНИЕ ТОЛЬКО DNS MANAGER"
+            warn_msg "Будут удалены только DoH-секции с dns_manager=1 и записи, ранее отмеченные как наши."
+            if confirm_action "Удалить только изменения DNS Manager?"; then
+                rollback_ours
+                pause
+            else
+                info_msg "Отменено."
+                pause
+            fi
+            ;;
+        *) warn_msg ; pause ;;
+    esac
     done
 }
 
