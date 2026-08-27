@@ -61,14 +61,25 @@ err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
+
     printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
-    printf "  ${C_GREEN}[✓] Да / применить${C_NC}\n"
-    printf "  ${C_RED}[✗] Нет / назад${C_NC}\n"
-    printf "Выбор: "
-    read -r _ans
+    printf "  ${C_GREEN}[✓] Y / y — Да, применить${C_NC}\n"
+    printf "  ${C_RED}[✗] N / n — Нет, назад${C_NC}\n"
+    printf "${C_YELLOW}Выбор: ${C_NC}"
+
+    safe_read _ans
+
     case "$_ans" in
-        y|Y|yes|YES|д|Д|да|Да|✓|'+') return 0 ;;
-        *) return 1 ;;
+        y|Y)
+            return 0
+            ;;
+        n|N|"")
+            return 1
+            ;;
+        *)
+            warn_msg "Неверный выбор. Используйте Y — применить или N — назад."
+            return 1
+            ;;
     esac
 }
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
