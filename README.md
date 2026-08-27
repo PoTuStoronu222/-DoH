@@ -118,6 +118,7 @@ RU DNS
 ```sh
 wget -O /usr/bin/dns-manager https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh
 chmod +x /usr/bin/dns-manager
+dns-manager
 ```
 
 После установки менеджер запускается одной командой:
