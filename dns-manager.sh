@@ -48,18 +48,21 @@ log_tx() {
     printf 'TX|%s|%s|%s|%s|%s|%s\n' "$TX_ID" "$(date +%s)" "$1" "$2" "$3" "$4" "$5" >> "$TX_LOG" 2>/dev/null
 }
 ok_msg() { log_msg "OK $*"; printf "${C_GREEN}[✓] %s${C_NC}\n" "$*"; }
+info_msg() { log_msg "INFO $*"; printf "${C_CYAN}[ℹ] %s${C_NC}\n" "$*"; }
 warn_msg() { log_msg "WARN $*"; printf "${C_YELLOW}[!] %s${C_NC}\n" "$*"; }
 err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
     while :; do
-        printf "${C_WHITE}%s${C_NC} ${C_GREEN}[✓] Да${C_NC}  ${C_RED}[✗] Нет${C_NC}: " "$_prompt"
+        printf "\n${C_WHITE}%s${C_NC} [y/n] (Enter = y): " "$_prompt"
         read -r _ans
         case "$_ans" in
-            y|Y|yes|YES|д|Д|да|ДА|✓|ok|OK|1|'') return 0 ;; # Enter по умолчанию = Да
-            n|N|no|NO|н|Н|нет|НЕТ|✗|2) return 1 ;;
-            *) printf "${C_YELLOW}Введите Да/Д или Нет/Н.${C_NC}\n" ;;
+            # y/Y, д/Д ("да"), н/Н (клавиша 'Y' в русской раскладке) и Enter
+            y|Y|д|Д|н|Н|1|'') return 0 ;;
+            # n/N, т/Т (клавиша 'N' в русской раскладке)
+            n|N|т|Т|2)        return 1 ;;
+            *) printf "${C_YELLOW}Введите y или n.${C_NC}\n" ;;
         esac
     done
 }
@@ -1878,7 +1881,6 @@ quick_max_bypass() {
     [ -s "$TEST_RESULTS" ] || return
 
     DNS_PROFILE="hybrid"
-    # Use tested bypass candidates for the six general slots.
     auto_fill_slots bypass >/dev/null 2>&1 || true
     SLOT_RU="yandex_ru"
     SLOT_RU_2=""
@@ -1900,14 +1902,11 @@ quick_max_bypass() {
         fi
     done
     printf "  ${C_GREEN}✓${C_NC} RU: ${C_WHITE}%s${C_NC} → ${C_YELLOW}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "$HYBRID_PORT_RU"
-    printf "\n"
-
-    # УДАЛЕНО: show_map >/dev/null 2>&1 (вызывало скрытый pause)
 
     if confirm_action "Применить этот готовый план?"; then
         apply_settings
     else
-        info_msg "План сохранён, но не применён."
+        printf "${C_CYAN}ℹ План сохранён, но не применён.${C_NC}\n"
         pause
     fi
 }
