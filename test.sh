@@ -61,24 +61,14 @@ err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
-
     printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
-    printf "  ${C_GREEN}[✓] Y / y — Да, применить${C_NC}\n"
-    printf "  ${C_RED}[✗] N / n — Нет, назад${C_NC}\n"
-    printf "${C_YELLOW}Выбор: ${C_NC}"
-
+    printf "  ${C_GREEN}[✓] Да / применить${C_NC}\n"
+    printf "  ${C_RED}[✗] Нет / назад${C_NC}\n"
+    printf "Выбор: "
     read -r _ans
-
     case "$_ans" in
-        y|Y)
-            return 0
-            ;;
-        n|N|"")
-            return 1
-            ;;
-        *)
-            return 1
-            ;;
+        y|Y|yes|YES|д|Д|да|Да|✓|'+') return 0 ;;
+        *) return 1 ;;
     esac
 }
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
@@ -636,7 +626,7 @@ printf "${C_WHITE}RU:${C_NC} домены .ru/.su/.рф идут только в
 printf "${C_YELLOW}[1]${C_NC} ⚡ Автоматически настроить Hybrid SmartDNS\n"
 printf "${C_YELLOW}[2]${C_NC} 🧪 Проверить 6 DoH + Yandex\n"
 printf "${C_YELLOW}[3]${C_NC} 🔧 Изменить слоты вручную\n"
-printf "${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "
+printf "${C_RED}[✗]${C_NC} Назад\nВыбор: "
 safe_read _c
 case "$_c" in
 1)
@@ -2071,6 +2061,7 @@ safe_read c
 [ -z "$c" ] && { clear_screen; printf "${C_GREEN}DNS Manager завершён.${C_NC}\n"; exit 0; }
         case "$c" in
             1) quick_max_bypass ;;
+            # Добавлен pause после каждого вызова menu_best_actions
             2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ" ;;
             3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ" ;;
             4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ" ;;
