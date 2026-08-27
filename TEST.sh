@@ -1,6 +1,19 @@
 #!/bin/sh
 # ============================================================
 # DNS Manager v1.0 — Hybrid SmartDNS
+# Русский DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
+# Первым делом читает реальное состояние роутера.
+#
+# Функции:
+#   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
+#   - NTP IP-first: Cloudflare / NIST / Google отдельным профилем /
+#     ВНИИФТРИ (Москва + регионы)
+#   - Bootstrap DNS
+#   - Bogus-NXDOMAIN каталог (только явно выбранные пользователем)
+#   - обнаружение Zapret/Proxy/VPN/TG WS/Tailscale/SmartDNS/Unbound/AdGuard/MosDNS
+#   - ownership OURS / FOREIGN / UNKNOWN
+#   - ADD/UPDATE своих объектов, KEEP чужих
+#   - журнал и транзакции
 # ============================================================
 MANAGER_PATH="/usr/bin/dns-manager"
 VERSION="1.0-HYBRID"
@@ -22,7 +35,18 @@ TX_DIR="$STATE_DIR/tx-$TX_ID"
 TX_ACTIVE=0
 TX_RESERVED_PORTS=""
 TX_PRE_SLOTS=""
-C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_WHITE='\033[1;37m'; C_CYAN='\033[1;36m'; C_MAGENTA='\033[1;35m'; C_PINK='\033[1;35m'; C_BOLD='\033[1m'; C_TITLE='\033[1;33m'; C_SECTION='\033[1;37m'; C_NC='\033[0m'
+C_RED='\033[1;31m'
+C_GREEN='\033[1;32m'
+C_YELLOW='\033[1;33m'
+C_BLUE='\033[1;34m'
+C_MAGENTA='\033[1;35m'
+C_PINK='\033[1;35m'
+C_CYAN='\033[1;36m'
+C_WHITE='\033[1;37m'
+C_BOLD='\033[1m'
+C_NC='\033[0m'
+C_TITLE='\033[1;33m'
+C_SECTION='\033[1;37m'
 log_msg() {
 mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
 printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null
@@ -241,7 +265,7 @@ _had_dns_profile=0
 : "${PORT_RU:=}"; : "${PORT_RU_2:=}"
 : "${BOOTSTRAP_DNS:=77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15}"
 : "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"
-: "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}" : "${FORCE_DOH:=0}"
+: "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}"
 : "${BALANCER_ENABLED:=1}"; : "${NTP_PRESET:=cf_ip}"; : "${DNS_PROFILE:=hybrid}"
 TLD_SPLIT="$TLD_RU_ENABLED"
 if [ "$_had_dns_profile" = 0 ] && [ -z "$DNS_PROFILE" ]; then
@@ -274,7 +298,6 @@ MTU_FIX="$MTU_FIX"
 NTP_IP_FALLBACK="$NTP_IP_FALLBACK"
 SYSCTL_TUNING="$SYSCTL_TUNING"
 GO_OPTIMIZE="$GO_OPTIMIZE"
-FORCE_DOH="$FORCE_DOH"
 BALANCER_ENABLED="$BALANCER_ENABLED"
 NTP_PRESET="$NTP_PRESET"
 DNS_PROFILE="$DNS_PROFILE"
@@ -661,7 +684,6 @@ apply_ntp_ip_fallback() {
 servers="$(grep -v '^#' "$NTP_CATALOG" 2>/dev/null | grep "^${NTP_PRESET}|" | head -1 | cut -d'|' -f4)"
 [ -n "$servers" ] || { warn_msg "NTP-профиль '$NTP_PRESET' не найден в каталоге."; return 1; }
 # Удаляем ВСЕ старые NTP серверы из основной секции
-[ -n "$(uci -q get system.ntp)" ] || uci -q set system.ntp=timeserver
 while uci -q delete system.ntp.server >/dev/null 2>&1; do :; done
 # Записываем наши серверы в ОСНОВНУЮ секцию system.ntp
 for ipx in $servers; do
@@ -785,7 +807,8 @@ target="$FREE_PORT_RESULT"
 fi
 # Если порт изменился, обновляем конфигурацию по точному ID секции (без хрупкого grep)
 if [ "$target" != "$current" ]; then
-if [ -n "$sec_idx" ] && uci -q get "https-dns-proxy.@https-dns-proxy[$sec_idx]" >/dev/null 2>&1; then
+if [ -n "$sec_idx" ]; then
+[ "$(uci -q get "https-dns-proxy.@https-dns-proxy[$sec_idx].dns_manager" 2>/dev/null)" = "1" ] || return 1
 uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].listen_port=$target" || return 1
 else
 err_msg "Не найден идентификатор секции DoH для $name"
@@ -983,64 +1006,6 @@ mv "$TMP_DIR/go.$$" "$f" || continue
 file_hash "$f" > "$hash_file"
 record_own "file" "$f" "managed-hash" "$hash_file"
 done
-}
-# ----- Принудительный перехват DNS (безопасный DoH-форсинг) -----
-apply_dns_force() {
-    [ "$FORCE_DOH" = 1 ] || return 0
-
-    # Автоопределение LAN IP, если переменная пуста
-    local lan_ip="$LAN_IP"
-    [ -z "$lan_ip" ] && lan_ip="$(uci -q get network.lan.ipaddr | cut -d'/' -f1)"
-    [ -z "$lan_ip" ] && lan_ip="192.168.1.1"
-
-    # 1. Canary Domain: отключение DoH в браузерах (Firefox/Chrome)
-    uci del_list dhcp.@dnsmasq[0].address='/use-application-dns.net/' 2>/dev/null
-    uci add_list dhcp.@dnsmasq[0].address='/use-application-dns.net/'
-
-    # 2. Перехват DNS (DNAT порта 53 на локальный IP)
-    uci -q delete firewall.dns_intercept
-    uci set firewall.dns_intercept=redirect
-    uci set firewall.dns_intercept.name='Force-Local-DNS'
-    uci set firewall.dns_intercept.src='lan'
-    uci set firewall.dns_intercept.proto='tcp udp'
-    uci set firewall.dns_intercept.src_dport='53'
-    uci set firewall.dns_intercept.dest_ip="$lan_ip"
-    uci set firewall.dns_intercept.dest_port='53'
-    uci set firewall.dns_intercept.target='DNAT'
-
-    # 3. Блокировка DoT (порт 853) с REJECT
-    uci -q delete firewall.dot_block
-    uci set firewall.dot_block=rule
-    uci set firewall.dot_block.name='Reject-DoT-Port853'
-    uci set firewall.dot_block.src='lan'
-    uci set firewall.dot_block.dest='wan'
-    uci set firewall.dot_block.proto='tcp udp'
-    uci set firewall.dot_block.dest_port='853'
-    uci set firewall.dot_block.target='REJECT'
-
-    uci commit dhcp
-    uci commit firewall
-    /etc/init.d/dnsmasq restart >/dev/null 2>&1
-    if [ "$SYS_FW" = "fw4" ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
-
-    record_own "firewall" "dns_intercept" "enabled" "lan_ip=$lan_ip"
-    record_own "firewall" "dot_block" "enabled" ""
-    ok_msg "Безопасный перехват DNS включён (DNAT 53, REJECT 853, canary domain)."
-}
-
-remove_dns_force() {
-    FORCE_DOH=0   # <-- Синхронизация состояния
-
-    uci del_list dhcp.@dnsmasq[0].address='/use-application-dns.net/' 2>/dev/null
-    uci -q delete firewall.dns_intercept
-    uci -q delete firewall.dot_block
-
-    uci commit dhcp
-    uci commit firewall
-    /etc/init.d/dnsmasq restart >/dev/null 2>&1
-    if [ "$SYS_FW" = "fw4" ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
-
-    ok_msg "Принудительный перехват DNS отключён."
 }
 apply_bogus() {
 clear_screen
@@ -1304,9 +1269,6 @@ fi
 uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH. Проверьте права доступа к /etc/config/https-dns-proxy и убедитесь, что файл не поврежден."; tx_restore_on_failure; return 1; }
 reconcile_dnsmasq || { err_msg "Не удалось настроить dnsmasq."; tx_restore_on_failure; return 1; }
 if [ "$NTP_IP_FALLBACK" = 1 ]; then
-if [ "$FORCE_DOH" = 1 ]; then
-    apply_dns_force || { err_msg "Не удалось применить перехват DNS."; tx_restore_on_failure; return 1; }
-fi
 apply_ntp_if_needed || { err_msg "Не удалось настроить NTP по IP."; tx_restore_on_failure; return 1; }
 fi
 if [ "$BLOCK_QUIC" = 1 ]; then apply_quic || { err_msg "Не удалось применить блокировку QUIC."; tx_restore_on_failure; return 1; }; fi
@@ -1361,10 +1323,6 @@ uci commit dhcp 2>/dev/null
 for r in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
 while :; do idx="$(uci show firewall 2>/dev/null | grep "name='$r'" | head -n1 | cut -d. -f2 | cut -d= -f1)"; [ -n "$idx" ] || break; uci -q delete "firewall.$idx"; done
 done
-# Удаляем свои правила перехвата DNS, если они были созданы
-if grep -q 'firewall|dns_intercept|enabled' "$OWNERSHIP" 2>/dev/null; then
-    remove_dns_force
-fi
 uci commit firewall 2>/dev/null
 if [ -f /etc/sysctl.d/90-dns-manager.conf ]; then
 for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
@@ -1860,8 +1818,7 @@ menu_extras() {
         printf "  ${C_YELLOW}[5]${C_NC} Резерв времени по IP: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
         printf "  ${C_YELLOW}[6]${C_NC} Sysctl: %b\n" "$(state_word "$SYSCTL_TUNING")"
         printf "  ${C_YELLOW}[7]${C_NC} Оптимизация Go / Tailscale / TG WS: %b\n" "$(state_word "$GO_OPTIMIZE")"
-        printf "  ${C_YELLOW}[8]${C_NC} Принудительный перехват DNS (безопасный DoH-форсинг): %b\n" "$(state_word "$FORCE_DOH")"
-        printf "  ${C_YELLOW}[9]${C_NC} IP-заглушки\n"
+        printf "  ${C_YELLOW}[8]${C_NC} IP-заглушки\n"
         printf "\n  ${C_GREEN}[Enter]${C_NC} Назад\n\n"
         printf "${C_YELLOW}Выбор:${C_NC} "; safe_read c
         
@@ -1923,18 +1880,7 @@ menu_extras() {
                 fi
                 save_config
                 pause ;;
-            8)
-    [ "$FORCE_DOH" = "1" ] && FORCE_DOH=0 || FORCE_DOH=1
-    if [ "$FORCE_DOH" = "1" ]; then
-        apply_dns_force
-    else
-        remove_dns_force
-    fi
-    save_config
-    log_msg "INFO: Принудительный перехват DNS переключен на $FORCE_DOH"
-    pause
-    ;;
-            9) menu_bogus ;;
+            8) menu_bogus ;;
             *) warn_msg "Неверный выбор"; sleep 1 ;;
         esac
     done
