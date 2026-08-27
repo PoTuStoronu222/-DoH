@@ -116,7 +116,8 @@ RU DNS
 Установка выполняется один раз:
 
 ```sh
-sh <(wget -O - https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh)
+wget -O /usr/bin/dns-manager https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh
+chmod +x /usr/bin/dns-manager
 ```
 
 После установки менеджер запускается одной командой:
