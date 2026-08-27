@@ -61,11 +61,11 @@ err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
-    printf "${C_WHITE}%s${C_NC} ${C_GREEN}[y] Да${C_NC} / ${C_YELLOW}[любая другая клавиша] Отмена${C_NC}: " "$_prompt"
+    printf "\n${C_WHITE}%s${C_NC} ${C_GREEN}[y] Да${C_NC} / ${C_YELLOW}[любая другая клавиша] Отмена${C_NC}: " "$_prompt"
     read -r _ans
     case "$_ans" in
-        y|Y|д|Д) return 0 ;;
-        *)       return 1 ;;
+        y|Y|д|Д|yes|YES) return 0 ;;
+        *) return 1 ;;
     esac
 }
 pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
@@ -937,7 +937,7 @@ uci commit dhcp
 apply_quic() {
 [ "$BLOCK_QUIC" = 1 ] || return 0
 # REUSE semantics: never remove Block_UDP_* belonging to other managers.
-if [ "$QUIC_FOREIGN" = 1 ] || [ "$QUIC_OURS" = 1 ]; then
+if [ "$QUIC_BLOCKED" = 1 ]; then
 printf "  ${C_WHITE}= QUIC: существующее правило оставлено, дубли не создаются.${C_NC}\n"
 return 0
 fi
@@ -1207,6 +1207,7 @@ printf "  ${C_YELLOW}⚠ Обнаружены чужие или неизвест
 printf "  ${C_YELLOW}   Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
 fi
 printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
+printf "${C_YELLOW}ℹ Если желаемый порт занят чужим сервисом, слот уедет на ближайший свободный — итог будет показан после применения.${C_NC}\n"
 confirm_action "Применить показанную выше конфигурацию?" || return
 TX_ID="$(date +%Y%m%d-%H%M%S)-$$"
 TX_RESERVED_PORTS=""
@@ -1229,6 +1230,7 @@ done
 # инвентарь устарел после зачистки — обновляем, иначе индексы/владельцы неверны
 disc_listeners
 disc_dns
+repair_duplicate_own_doh_ports
 if [ "$DNS_PROFILE" = hybrid ]; then
 TX_RESERVED_PORTS=""
 for s in 1 2 3 4 5 6; do
@@ -1274,6 +1276,12 @@ run_discovery
 if verify_after_apply; then
 tx_commit
 save_config
+printf "\n${C_WHITE}Фактические порты после применения:${C_NC}\n"
+for _s in 1 2 3 4 5 6; do
+    eval "_v=\${SLOT_$_s}"; eval "_p=\${PORT_$_s}"
+    [ -n "$_v" ] && printf "  ${C_GREEN}✓${C_NC} 127.0.0.1:%s ← %s\n" "$_p" "$(dns_name "$_v")"
+done
+[ -n "$SLOT_RU" ] && printf "  ${C_GREEN}✓${C_NC} 127.0.0.1:%s ← %s (.ru/.su/.рф)\n" "$PORT_RU" "$(dns_name "$SLOT_RU")"
 ok_msg "Готово. Выбранная конфигурация успешно применена и проверена."
 log_tx "VERIFY" "all" "VERIFY" "OK" "dnsmasq=$DNSMASQ_RUN,doh=$DOH_TOTAL"
 else
@@ -1552,7 +1560,6 @@ _div="$TMP_DIR/auto-diverse"
 for _c in bypass clean security privacy adblock family social regional; do
 awk -F'|' -v c="$_c" '$2==c{print}' "$_src" | head -n1 >> "$_div"
 done
-awk -F'|' '$0!=""{print}' "$_div" >> "$_src.div"
 cat "$_div" 2>/dev/null > "$_src2"
 cat "$_src" 2>/dev/null >> "$_src2"
 : > "$_pool"
@@ -1760,7 +1767,7 @@ printf "║           🔧 Дополнительные настройки      
 printf "╚══════════════════════════════════════════════╝${C_NC}\n"
 printf "  ${C_YELLOW}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(state_word "$BALANCER_ENABLED")"
 printf "  ${C_YELLOW}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(state_word "$TLD_RU_ENABLED")"
-printf "  ${C_YELLOW}[3]${C_NC} QUIC: %b\n" "$(state_word "$BLOCK_QUIC")"
+if [ "$QUIC_BLOCKED" = 1 ]; then printf "  ${C_YELLOW}[3]${C_NC} QUIC: ${C_GREEN}ВКЛ • правило активно${C_NC}\n"; else printf "  ${C_YELLOW}[3]${C_NC} QUIC: ${C_YELLOW}ВЫКЛ${C_NC}\n"; fi
 printf "  ${C_YELLOW}[4]${C_NC} Исправление MTU: %b\n" "$(state_word "$MTU_FIX")"
 printf "  ${C_YELLOW}[5]${C_NC} Резерв времени по IP: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
 printf "  ${C_YELLOW}[6]${C_NC} Sysctl: %b\n" "$(state_word "$SYSCTL_TUNING")"
@@ -1769,16 +1776,16 @@ printf "  ${C_YELLOW}[8]${C_NC} IP-заглушки\n"
 printf "  ${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
 [ -z "$c" ] && return
 case "$c" in
-1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq; pause ;;
-2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq; pause ;;
-3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle; pause ;;
-4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle; pause ;;
+1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; toggle_and_apply_dnsmasq;
+2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; toggle_and_apply_dnsmasq; 
+3) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_quic_toggle; 
+4) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_mtu_toggle; 
 5) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1
-[ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config; pause ;;
+[ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_if_needed >/dev/null 2>&1; save_config; 
 6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1
-[ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config; pause ;;
+[ "$SYSCTL_TUNING" = 1 ] && apply_sysctl >/dev/null 2>&1; save_config; 
 7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1
-[ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config; pause ;;
+[ "$GO_OPTIMIZE" = 1 ] && apply_go >/dev/null 2>&1; save_config;
 8) menu_bogus ;;
 *) return ;;
 esac
