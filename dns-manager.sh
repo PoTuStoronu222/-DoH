@@ -1217,7 +1217,7 @@ apply_settings() {
     printf "  DoH: %s (наших %s / чужих %s / неизвестных %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
     if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
         printf "  ${C_YELLOW}⚠ Обнаружены чужие или неизвестные DoH. Они не будут изменены.${C_NC}\n"
-        printf "  ${C_YELLOW}  Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
+        printf "  ${C_YELLOW}   Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
     fi
 
     printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
@@ -1228,14 +1228,22 @@ apply_settings() {
     tx_snapshot_start || { err_msg "Не удалось создать снимок транзакции. Изменения не выполняются."; return 1; }
     log_tx "PLAN" "all" "APPLY" "START" "version=$VERSION"
 
-    # The shared service must be stopped before changing listeners, otherwise old sockets
-    # can falsely look like foreign port conflicts during a dirty-router repair.
+    # Остнавливаем сервис перед пересборкой UCI
     if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = hybrid ]; then
         /etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
     fi
 
+    # Полностью очищаем старые инстансы DNS Manager в UCI, освобождая порты 5053-5059
+    _idx=0
+    while uci -q get https-dns-proxy.@https-dns-proxy[$_idx] >/dev/null; do
+        if [ "$(uci -q get https-dns-proxy.@https-dns-proxy[$_idx].dns_manager)" = "1" ]; then
+            uci -q delete https-dns-proxy.@https-dns-proxy[$_idx]
+        else
+            _idx=$((_idx + 1))
+        fi
+    done
+
     if [ "$DNS_PROFILE" = hybrid ]; then
-        hybrid_reconcile_existing || { err_msg "Не удалось привести существующие наши DoH к ролям 5053–5059."; tx_restore_on_failure; return 1; }
         TX_RESERVED_PORTS=""
         for s in 1 2 3 4 5 6; do
             eval "v=\${SLOT_$s}"
