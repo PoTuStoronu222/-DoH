@@ -113,7 +113,7 @@ RU DNS
 
 # 🚀 Быстрая установка
 
-Установка выполняется один раз:
+Установка и обновление:
 
 ```sh
 wget -O /usr/bin/dns-manager https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh
