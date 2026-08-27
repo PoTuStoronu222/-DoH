@@ -1866,12 +1866,7 @@ ensure_dependencies(){
     if [ "$PKG_MGR" = "apk" ]; then
         [ "$HAS_DIG" = yes ] || missing="$missing bind-tools"
     else
-            if [ "$HAS_DIG" != yes ]; then
-        if [ "$PKG_MGR" = "apk" ]; then
-            missing="$missing bind-tools"
-        else
-            missing="$missing bind-dig"
-        fi
+        [ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
     fi
     [ "$HAS_HDP" = yes ] || missing="$missing https-dns-proxy"
 
