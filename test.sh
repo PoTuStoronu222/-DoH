@@ -63,15 +63,18 @@ confirm_action() {
     _prompt="$1"
 
     printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
-    printf "  ${C_GREEN}[✓] Y / применить${C_NC}\n"
-    printf "  ${C_RED}[✗] N / назад${C_NC}\n"
+    printf "  ${C_GREEN}[✓] Y / y — Да, применить${C_NC}\n"
+    printf "  ${C_RED}[✗] N / n — Нет, назад${C_NC}\n"
     printf "${C_YELLOW}Выбор: ${C_NC}"
 
     read -r _ans
 
     case "$_ans" in
-        y|Y|yes|YES|д|Д|да|Да|ДА)
+        y|Y)
             return 0
+            ;;
+        n|N|"")
+            return 1
             ;;
         *)
             return 1
