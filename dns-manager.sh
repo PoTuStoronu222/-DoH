@@ -1046,22 +1046,47 @@ apply_ntp_if_needed() {
 }
 
 verify_after_apply() {
-    sleep 2
+    # Даем сервисам время подняться (увеличили с 2 до 6 секунд)
+    sleep 6
+
     if /etc/init.d/dnsmasq status >/dev/null 2>&1; then DNSMASQ_RUN="yes"; elif pgrep -x dnsmasq >/dev/null 2>&1; then DNSMASQ_RUN="yes"; else DNSMASQ_RUN="no"; fi
     [ "$DNSMASQ_RUN" = yes ] || { err_msg "dnsmasq не запущен после перезапуска и ожидания."; return 1; }
+
     if [ "$DOH_TOTAL" -gt 0 ]; then
         pgrep -f 'https-dns-proxy' >/dev/null 2>&1 || { err_msg "https-dns-proxy не запущен."; return 1; }
+        
+        # Перебираем порты аккуратно, давая каждой итерации небольшой шанс на разогрев
         for p in "$PORT_1" "$PORT_2" "$PORT_3" "$PORT_4" "$PORT_5" "$PORT_6" "$PORT_RU" "$PORT_RU_2"; do
             [ -n "$p" ] || continue
-            [ -s "$LISTENERS" ] || return 1
-            grep -qE ":$p([[:space:]]|$)" "$LISTENERS" 2>/dev/null || { err_msg "DoH порт $p не слушается."; return 1; }
+            
+            # Попытка проверить порт с небольшой микропаузой, если порт еще не открылся
+            local resolved=0
+            for i in 1 2 3; do
+                if netstat -an 2>/dev/null | grep -qE ":$p([[:space:]]|$)" || ( [ -s "$LISTENERS" ] && grep -qE ":$p([[:space:]]|$)" "$LISTENERS" 2>/dev/null ); then
+                    resolved=1
+                    break
+                fi
+                sleep 1
+            done
+            
+            [ "$resolved" -eq 1 ] || { err_msg "DoH порт $p не слушается."; return 1; }
         done
     fi
-    if command -v nslookup >/dev/null 2>&1; then
-        nslookup example.com 127.0.0.1 >/dev/null 2>&1 || { err_msg "Локальный DNS через 127.0.0.1 не отвечает."; return 1; }
-    elif command -v dig >/dev/null 2>&1; then
-        dig +time=2 +tries=1 @127.0.0.1 example.com A >/dev/null 2>&1 || { err_msg "Локальный DNS через 127.0.0.1 не отвечает."; return 1; }
-    fi
+
+    # Финальная проверка локального резолвера с тремя попытками
+    local dns_ok=0
+    for i in 1 2 3; do
+        if command -v nslookup >/dev/null 2>&1; then
+            if nslookup example.com 127.0.0.1 >/dev/null 2>&1; then dns_ok=1; break; fi
+        elif command -v dig >/dev/null 2>&1; then
+            if dig +time=2 +tries=1 @127.0.0.1 example.com A >/dev/null 2>&1; then dns_ok=1; break; fi
+        else
+            dns_ok=1; break # Если нет утилит тестирования, пропускаем эту проверку
+        fi
+        sleep 1
+    done
+
+    [ "$dns_ok" -eq 1 ] || { err_msg "Локальный DNS через 127.0.0.1 не отвечает."; return 1; }
     return 0
 }
 
