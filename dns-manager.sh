@@ -1901,7 +1901,9 @@ quick_max_bypass() {
     done
     printf "  ${C_GREEN}✓${C_NC} RU: ${C_WHITE}%s${C_NC} → ${C_YELLOW}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "$HYBRID_PORT_RU"
     printf "\n"
-    show_map >/dev/null 2>&1 || true
+
+    # УДАЛЕНО: show_map >/dev/null 2>&1 (вызывало скрытый pause)
+
     if confirm_action "Применить этот готовый план?"; then
         apply_settings
     else
