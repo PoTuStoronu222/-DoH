@@ -799,18 +799,20 @@ ensure_doh_slot() {
     url="$(normalize_url "$(dns_url "$id")")"; name="$(dns_name "$id")"
     [ -n "$url" ] || return 1
 
-    desired=""
+    local desired=""
     [ "$DNS_PROFILE" = "hybrid" ] && desired="$(hybrid_desired_port "$slot")"
 
-    existing="$(find_own_doh_by_url "$url")"
-    if [ -n "$existing" ]; then
-        sec_idx="$(printf '%s' "$existing" | cut -d'|' -f1)"
-        current="$(printf '%s' "$existing" | cut -d'|' -f2)"
-        target="$current"
+    # 1. Проверяем, существует ли уже наш собственный экземпляр для этого URL
+    local existing_own
+    existing_own="$(find_own_doh_by_url "$url")"
+    
+    if [ -n "$existing_own" ]; then
+        local sec_idx="$(printf '%s' "$existing_own" | cut -d'|' -f1)"
+        local current="$(printf '%s' "$existing_own" | cut -d'|' -f2)"
+        local target="$current"
 
         if [ -n "$desired" ] && [ "$current" != "$desired" ]; then
-            # In Hybrid, roles have stable preferred ports. If a foreign object blocks it,
-            # use a safe fallback rather than overwrite foreign state.
+            # В Hybrid-режиме у ролей фиксированные порты. Если порт занят чужим, ищем безопасный фоллбэк.
             port_used_anywhere "$desired"; rc=$?
             if [ "$rc" = 2 ]; then
                 err_msg "Нельзя проверить порт $desired для $name."
@@ -818,9 +820,6 @@ ensure_doh_slot() {
             elif [ "$rc" = 1 ]; then
                 target="$desired"
             else
-                # If only our own other section occupies the desired port, use a free
-                # temporary role for this transaction. The main loop is ordered so this
-                # normally occurs only with dirty legacy state.
                 free_port || return 1
                 target="$FREE_PORT_RESULT"
             fi
@@ -832,27 +831,33 @@ ensure_doh_slot() {
             free_port || return 1
             target="$FREE_PORT_RESULT"
         fi
-                if [ "$target" != "$current" ]; then
-            # Ищем имя секции по порту — надёжнее чем индекс
-            _sec_name="$(uci show https-dns-proxy 2>/dev/null | grep "\.listen_port='$current'" | head -1 | cut -d. -f2)"
-            if [ -n "$_sec_name" ]; then
-                uci set "https-dns-proxy.$_sec_name.listen_port=$target" || return 1
+
+        # Если порт изменился, обновляем конфигурацию по точному ID секции (без хрупкого grep)
+        if [ "$target" != "$current" ]; then
+            if [ -n "$sec_idx" ]; then
+                uci set "https-dns-proxy.$sec_idx.listen_port=$target" || return 1
             else
-                err_msg "Не найдена секция DoH с портом $current"
+                err_msg "Не найден идентификатор секции DoH для $name"
                 return 1
             fi
+        fi
 
-    existing="$(find_any_doh_by_url "$url")"
-    if [ -n "$existing" ]; then
-        # Same resolver URL exists in a foreign/unknown section.
-        # Never take ownership of it and never modify it. Create our own
-        # local instance on a unique port instead.
-        owner="$(printf '%s' "$existing" | cut -d'|' -f3)"
-        p_old="$(printf '%s' "$existing" | cut -d'|' -f2)"
+        eval "PORT_$slot=\"$target\""
+        printf "  ${C_GREEN}+ %s → 127.0.0.1:%s${C_NC}\n" "$name" "$target"
+        return 0
+    fi
+
+    # 2. Нашего экземпляра нет — проверяем, не занят ли URL сторонней/неизвестной секцией
+    local existing_foreign
+    existing_foreign="$(find_any_doh_by_url "$url")"
+    if [ -n "$existing_foreign" ]; then
+        local owner="$(printf '%s' "$existing_foreign" | cut -d'|' -f3)"
+        local p_old="$(printf '%s' "$existing_foreign" | cut -d'|' -f2)"
         warn_msg "$name уже используется другой/неизвестной секцией (порт $p_old, владелец=$(owner_ru "$owner")). Создаю отдельный экземпляр DNS Manager."
     fi
 
-    target="$desired"
+    # 3. Определяем целевой порт для нового экземпляра
+    local target="$desired"
     if [ -n "$target" ]; then
         port_used_anywhere "$target"; rc=$?
         [ "$rc" = 2 ] && { err_msg "Нельзя проверить порт $target."; return 1; }
@@ -865,13 +870,16 @@ ensure_doh_slot() {
         claim_port_tx "$target" || return 1
     fi
 
-       sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
+    # 4. Создаем новую секцию с нуля
+    local sec
+    sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
     uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
     uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
     uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
     uci set "https-dns-proxy.$sec.bootstrap_dns=$BOOTSTRAP_DNS" || return 1
     uci set "https-dns-proxy.$sec.request_timeout=2" || return 1
     uci set "https-dns-proxy.$sec.dns_manager=1" || return 1
+    
     record_own "doh" "$target" "$url" "slot=$slot;name=$name"
     eval "PORT_$slot=\"$target\""
     printf "  ${C_GREEN}+ %s → 127.0.0.1:%s${C_NC}\n" "$name" "$target"
