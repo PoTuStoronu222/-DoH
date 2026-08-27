@@ -61,10 +61,13 @@ err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
-    printf "\n${C_WHITE}%s${C_NC} ${C_GREEN}[y] Да${C_NC} / ${C_YELLOW}[любая другая клавиша] Отмена${C_NC}: " "$_prompt"
+    printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
+    printf "  ${C_GREEN}[✓] Да / применить${C_NC}\n"
+    printf "  ${C_RED}[✗] Нет / назад${C_NC}\n"
+    printf "Выбор: "
     read -r _ans
     case "$_ans" in
-        y|Y|д|Д|yes|YES) return 0 ;;
+        y|Y|yes|YES|д|Д|да|Да|✓|'+') return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -623,7 +626,7 @@ printf "${C_WHITE}RU:${C_NC} домены .ru/.su/.рф идут только в
 printf "${C_YELLOW}[1]${C_NC} ⚡ Автоматически настроить Hybrid SmartDNS\n"
 printf "${C_YELLOW}[2]${C_NC} 🧪 Проверить 6 DoH + Yandex\n"
 printf "${C_YELLOW}[3]${C_NC} 🔧 Изменить слоты вручную\n"
-printf "${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "
+printf "${C_RED}[✗]${C_NC} Назад\nВыбор: "
 safe_read _c
 case "$_c" in
 1)
