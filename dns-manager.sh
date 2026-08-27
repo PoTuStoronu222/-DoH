@@ -38,7 +38,7 @@ TX_ACTIVE=0
 TX_RESERVED_PORTS=""
 TX_PRE_SLOTS=""
 
-C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_WHITE='\033[1;37m'; C_CYAN='\033[1;36m'; C_TITLE='\033[1;33m'; C_SECTION='\033[1;37m'; C_NC='\033[0m'
+C_RED='[1;31m'; C_GREEN='[1;32m'; C_YELLOW='[1;33m'; C_WHITE='[1;37m'; C_CYAN='[1;37m'; C_TITLE='[1;33m'; C_SECTION='[1;37m'; C_NC='[0m'
 
 log_msg() {
     mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
@@ -439,7 +439,7 @@ resolve_host() {
         if [ "$HAS_DIG" = yes ]; then
             ipx="$(dig +short "@$bs" "$host" A +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
         elif command -v nslookup >/dev/null 2>&1; then
-            ipx="$(nslookup "$host" "$bs" 2>/dev/null | awk '/^Address [0-9]+:|^Address: /{print $NF}' | grep -v '#' | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
+            ipx="$(nslookup "$host" "$bs" 2>/dev/null | awk '/^Address: /{print $2}' | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
         else
             ipx=""
         fi
@@ -462,109 +462,169 @@ resolve_host_fallback() {
 # ----- DNS tester -----
 test_one_dns() {
     id="$1"; url="$(normalize_url "$(dns_url "$id")")"; name="$(dns_name "$id")"; cat="$(dns_cat "$id")"
-    
-    # Корректное извлечение host и port для --resolve
-    host_port="$(printf '%s' "$url" | sed -E 's#^https://([^/]+).*#\1#')"
-    host="${host_port%%:*}"
-    port="${host_port##*:}"
-    [ "$port" = "$host" ] && port=443
-
+    host="$(printf '%s' "$url" | sed 's#^https://##; s#/.*$##')"
     ipx="$(resolve_host "$host")"
     [ -n "$ipx" ] || { printf '%s|%s|%s|-1|BOOTSTRAP_FAIL\n' "$id" "$cat" "$name" > "$TMP_DIR/t.$id"; return; }
-
     q="$TMP_DIR/q.$id"; body="$TMP_DIR/body.$id"; hdr="$TMP_DIR/h.$id"
     : > "$body"; : > "$hdr"
-
-    # RFC 8484 wire query: example.com A/IN (29 bytes)
+    # RFC 8484 wire query: example.com A/IN
     printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$q"
-
     result="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}|%{time_total}|%{errormsg}' \
-        --connect-timeout 3 --max-time 6 --resolve "$host:$port:$ipx" \
+        --connect-timeout 3 --max-time 6 --resolve "$host:443:$ipx" \
         -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' \
         --data-binary "@$q" "$url" 2>/dev/null)"
-
     code="${result%%|*}"; rest="${result#*|}"; tim="${rest%%|*}"; err="${rest#*|}"
     [ "$code" = "$result" ] && code="000"
-
-    bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"
-    [ -n "$bytes" ] || bytes=0
-
+    bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"; [ -n "$bytes" ] || bytes=0
     ctype="$(awk -F': *' 'tolower($1)=="content-type"{print tolower($2)}' "$hdr" 2>/dev/null | tail -n1 | tr -d '\r')"
-
-    case "$tim" in 
-        ''|0) ms=-1 ;; 
-        *) ms="$(awk -v t="$tim" 'BEGIN{v=t*1000; if(v<1)v=1; printf "%.0f", v}')" ;; 
-    esac
-
+    case "$tim" in ''|0) ms=-1;; *) ms="$(awk -v t="$tim" 'BEGIN{v=t*1000; if(v<1)v=1; printf "%.0f", v}')";; esac
     case "$code" in
         200)
             case "$ctype" in *application/dns-message*) ct_ok=yes;; *) ct_ok=no;; esac
-            if [ "$bytes" -ge 12 ] && [ "$ct_ok" = yes ]; then st=OK; else st=BAD_DOH_RESPONSE; fi 
-            ;;
+            if [ "$bytes" -ge 12 ] && [ "$ct_ok" = yes ]; then st=OK; else st=BAD_DOH_RESPONSE; fi ;;
         000)
-            # Замена на 100% совместимый tr A-Z a-z
-            elc="$(printf '%s' "$err" | tr 'A-Z' 'a-z')"
+            elc="$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')"
             case "$elc" in
-                *timed*|*timeout*) st=CURL_TIMEOUT ;;
-                *ssl*|*tls*|*certificate*|*schannel*) st=TLS_ERROR ;;
-                *could\ not\ resolve*|*resolve\ host*|*name\ or\ service*) st=DNS_ERROR ;;
-                *connection\ refused*|*failed\ to\ connect*|*connection\ reset*|*could\ not\ connect*) st=CONNECTION_ERROR ;;
-                *) st=CURL_ERROR ;;
-            esac 
-            ;;
+                *timed*|*timeout*) st=CURL_TIMEOUT;;
+                *ssl*|*tls*|*certificate*|*schannel*) st=TLS_ERROR;;
+                *could\ not\ resolve*|*resolve\ host*|*name\ or\ service*) st=DNS_ERROR;;
+                *connection\ refused*|*failed\ to\ connect*|*connection\ reset*|*could\ not\ connect*) st=CONNECTION_ERROR;;
+                *) st=CURL_ERROR;;
+            esac ;;
+        4??|5??) st="HTTP_$code" ;;
         *) st="HTTP_$code" ;;
     esac
-
     printf '%s|%s|%s|%s|%s\n' "$id" "$cat" "$name" "$ms" "$st" > "$TMP_DIR/t.$id"
     rm -f "$q" "$body" "$hdr"
 }
 test_dns_catalog() {
     [ "$HAS_CURL" = yes ] || { warn_msg "curl не установлен. Сначала установите его через пункт I."; return 1; }
-    
     rm -f "$TMP_DIR/t."* "$TMP_DIR/q."* "$TMP_DIR/body."* "$TMP_DIR/h."* "$TEST_RESULTS" 2>/dev/null
-    : > "$TEST_RESULTS"
-
-    printf '%bЗапуск параллельной проверки DNS/DoH...%b\n' "$C_WHITE" "$C_NC"
-    
+    total="$(count_dns)"
+    printf "${C_WHITE}Проверяю %s DNS/DoH параллельно...${C_NC}\n" "$total"
     n=0
     while IFS='|' read -r id _rest; do
-        case "$id" in ''|\#*) continue ;; esac
+        case "$id" in ''|\#*) continue;; esac
         test_one_dns "$id" &
         n=$((n+1))
         [ $((n % 8)) -eq 0 ] && wait
     done < "$DNS_CATALOG"
     wait
-
-    # Безопасное объединение временных файлов результатов
-    if [ -n "$(ls "$TMP_DIR"/t.* 2>/dev/null)" ]; then
-        cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
-    fi
-
-    # Подсчет факта по сформированному файлу результатов
-    total="$(wc -l < "$TEST_RESULTS" 2>/dev/null | tr -d ' ')"
-    [ -n "$total" ] || total=0
-    
+    cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
     okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
-    [ -n "$okn" ] || okn=0
-    
-    failn=$((total - okn))
-
-    printf '%b✓ Успешно: %s%b | %bПроблемные: %s%b | Всего: %s\n' \
-        "$C_GREEN" "$okn" "$C_NC" "$C_YELLOW" "$failn" "$C_NC" "$total"
-        
+    failn=$((total-okn))
+    printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
     log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
 }
-
 show_best_category() {
-    target_cat="$1"
-    limit="${2:-5}" # Если limit не задан, выводится топ-5
-
-    [ -s "$TEST_RESULTS" ] || return 1
-
-    awk -F'|' -v c="$target_cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null \
-        | sort -t'|' -k4,4n \
-        | head -n "$limit"
+    cat="$1"; limit="$2"
+    awk -F'|' -v c="$cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n | head -n "$limit"
 }
+
+
+# ----- Hybrid SmartDNS (6 DoH + Yandex RU) -----
+HYBRID_PORT_1=5053
+HYBRID_PORT_2=5054
+HYBRID_PORT_3=5055
+HYBRID_PORT_4=5056
+HYBRID_PORT_5=5057
+HYBRID_PORT_6=5058
+HYBRID_PORT_RU=5059
+
+hybrid_set_defaults() {
+    SLOT_1="mafioznik"
+    SLOT_2="comss_bypass"
+    SLOT_3="astracat"
+    SLOT_4="malw_link"
+    SLOT_5="comss_ru"
+    SLOT_6="vppay"
+    SLOT_RU="yandex_ru"
+    SLOT_RU_2=""
+    PORT_1="$HYBRID_PORT_1"
+    PORT_2="$HYBRID_PORT_2"
+    PORT_3="$HYBRID_PORT_3"
+    PORT_4="$HYBRID_PORT_4"
+    PORT_5="$HYBRID_PORT_5"
+    PORT_6="$HYBRID_PORT_6"
+    PORT_RU="$HYBRID_PORT_RU"
+    PORT_RU_2=""
+    DNS_PROFILE="hybrid"
+    TLD_RU_ENABLED=1
+    BALANCER_ENABLED=1
+    TLD_SPLIT=1
+}
+
+hybrid_desired_port() {
+    case "$1" in
+        1) printf '%s' "$HYBRID_PORT_1";;
+        2) printf '%s' "$HYBRID_PORT_2";;
+        3) printf '%s' "$HYBRID_PORT_3";;
+        4) printf '%s' "$HYBRID_PORT_4";;
+        5) printf '%s' "$HYBRID_PORT_5";;
+        6) printf '%s' "$HYBRID_PORT_6";;
+        RU) printf '%s' "$HYBRID_PORT_RU";;
+        RU_2) printf '%s' "5060";;
+        *) printf '';;
+    esac
+}
+
+hybrid_prepare_selection() {
+    # Do not overwrite a user's explicit Hybrid slot selection.
+    # Only fill defaults when the profile is truly empty.
+    if [ -z "$SLOT_1$SLOT_2$SLOT_3$SLOT_4$SLOT_5$SLOT_6$SLOT_RU" ]; then
+        hybrid_set_defaults
+    else
+        DNS_PROFILE="hybrid"
+        TLD_RU_ENABLED=1
+        BALANCER_ENABLED=1
+        PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
+        PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
+        [ -n "$SLOT_RU" ] && PORT_RU="$HYBRID_PORT_RU"
+    fi
+
+    # Hybrid's primary profile is based on the six preferred endpoints.
+    # Only replace a failed primary when automatic mode is explicitly requested.
+    if [ "${HYBRID_AUTO_REPAIR:-0}" = 1 ] && [ -s "$TEST_RESULTS" ]; then
+        : > "$TMP_DIR/hybrid-used"
+        for _s in 1 2 3 4 5 6; do
+            eval "_id=\${SLOT_$_s}"
+            _ok="$(awk -F'|' -v id="$_id" '$1==id && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
+            if [ "$_ok" != yes ]; then
+                _replacement=""
+                while IFS='|' read -r _rid _rcat _rname _rms _rst; do
+                    [ "$_rst" = OK ] || continue
+                    [ "$_rcat" = bypass ] || continue
+                    grep -qxF "$_rid" "$TMP_DIR/hybrid-used" 2>/dev/null && continue
+                    _replacement="$_rid"
+                    break
+                done <<EOF_HYB
+$(sort -t'|' -k4,4n "$TEST_RESULTS" 2>/dev/null)
+EOF_HYB
+                if [ -n "$_replacement" ]; then
+                    eval "SLOT_$_s=\"$_replacement\""
+                    printf "${C_YELLOW}⚠ %s не прошёл тест → резерв %s.${C_NC}\n" "$(dns_name "$_id")" "$(dns_name "$_replacement")"
+                    _id="$_replacement"
+                else
+                    warn_msg "Для Hybrid-слота $_s нет проверенного резерва."
+                    eval "SLOT_$_s="
+                fi
+            fi
+            [ -n "$_id" ] && printf '%s\n' "$_id" >> "$TMP_DIR/hybrid-used"
+        done
+        _yok="$(awk -F'|' -v id="$SLOT_RU" '$1==id && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
+        if [ "$_yok" != yes ]; then
+            warn_msg "Yandex RU сейчас не прошёл тест. RU-маршрут не применяется автоматически."
+            SLOT_RU=""
+        fi
+    fi
+    PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
+    PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
+    [ -n "$SLOT_RU" ] && PORT_RU="$HYBRID_PORT_RU"
+}
+
+show_hybrid_profile() {
+    while :; do
+        clear_screen
         printf "${C_WHITE}╔════════════════════════════════════════════════════╗\n"
         printf "║        ⭐ Hybrid SmartDNS — 6 DoH + Yandex       ║\n"
         printf "╚════════════════════════════════════════════════════╝${C_NC}\n\n"
@@ -1309,9 +1369,9 @@ status_ru() {
         HTTP_502) printf '%s' '✗ шлюз сервера недоступен (502)';;
         HTTP_503) printf '%s' '✗ сервис временно недоступен (503)';;
         HTTP_504) printf '%s' '✗ сервер не ответил вовремя (504)';;
-        HTTP_*) printf '%s' "✗ ответ HTTPS: код ${1#HTTP_}" ;;
-        CURL_ERROR*) printf '%s' '✗ ошибка curl / соединения' ;;
-        *) printf '%s' "$1" ;;
+        HTTP_*) printf '%s' "✗ ответ HTTPS: код ${1#HTTP_}";;
+        CURL_ERROR*) printf '%s' '✗ ошибка соединения HTTPS';;
+        *) printf '%s' '✗ неизвестная ошибка';;
     esac
 }
 category_ru() {
