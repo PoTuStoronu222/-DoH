@@ -864,7 +864,7 @@ newp="$FREE_PORT_RESULT"
 uci set "https-dns-proxy.@https-dns-proxy[$idx].listen_port=$newp" || return 1
 record_own "doh" "$newp" "$url" "repair_duplicate_port=$oldp;section=$idx"
 log_tx "PLAN" "doh.duplicate.$idx" "MOVE" "OK" "from=$oldp;to=$newp;url=$url"
-printf "  ${C_YELLOW}↻ Исправлен старый дубликат: %s → %s${C_NC}\n" "$oldp" "$newp"
+printf "  ${C_YELLOW}↻ Исправлен дубликат порта %s для %s → %s (${C_GREEN}успешно${C_NC})\n" "$oldp" "$(dns_name "$url")" "$newp"
 done <<EOF_DUP
 $(awk -F'|' -v p="$p" '$3=="OURS" && $2==p{print $1"|"$6}' "$DOH_INV")
 EOF_DUP
@@ -938,7 +938,7 @@ apply_quic() {
 [ "$BLOCK_QUIC" = 1 ] || return 0
 # REUSE semantics: never remove Block_UDP_* belonging to other managers.
 if [ "$QUIC_BLOCKED" = 1 ]; then
-printf "  ${C_WHITE}= QUIC: существующее правило оставлено, дубли не создаются.${C_NC}\n"
+printf "  ${C_WHITE}= QUIC: существующее правило оставлено, дубли не создаются. Проверьте конфигурацию firewall для QUIC блокировки.${C_NC}\n"
 return 0
 fi
 uci add firewall rule >/dev/null 2>&1 || return 1
@@ -961,7 +961,7 @@ key="${p%%=*}"; val="${p#*=}"; before="$(sysctl -n "$key" 2>/dev/null)"
 grep -q "^${key}|" "$sf" 2>/dev/null || printf '%s|%s\n' "$key" "${before:-unknown}" >> "$sf"
 foreign="$(grep -Rhs "^${key}=" /etc/sysctl.d 2>/dev/null | grep -v '^#' | grep -v "^${key}=${val}$" | head -n1)"
 if [ -n "$foreign" ] && ! grep -q "^${key}=${val}$" "$f" 2>/dev/null; then
-warn_msg "Не меняю $key: найдено стороннее значение ($foreign)."
+warn_msg "Не меняю $key: найдено стороннее значение ($foreign). Проверьте конфигурацию sysctl для этого параметра."
 continue
 fi
 grep -q "^${key}=${val}$" "$f" 2>/dev/null || printf '%s\n' "$p" >> "$f"
@@ -1045,7 +1045,7 @@ break
 fi
 sleep 1
 done
-[ "$resolved" -eq 1 ] || { err_msg "DoH порт $p не слушается."; return 1; }
+[ "$resolved" -eq 1 ] || { err_msg "DoH порт $p не слушается. Проверьте конфигурацию https-dns-proxy и убедитесь, что порт не занят другим процессом."; return 1; }
 done
 fi
 # Финальная проверка локального резолвера с тремя попытками
@@ -1100,7 +1100,7 @@ after="$(cat "$TX_DIR/$key.after" 2>/dev/null)"
 # If we captured the post-apply hash, restore only when the file
 # still equals the exact state created by this transaction.
 if [ -n "$after" ] && [ "$cur" != "$after" ]; then
-warn_msg "Не откатываю $f: обнаружено изменение после применения. Чужие изменения сохранены."
+warn_msg "Не откатываю $f: обнаружено изменение после применения. Чужие изменения сохранены. Проверьте конфигурацию вручную."
 continue
 fi
 if [ "$existed" = 1 ]; then
@@ -1251,7 +1251,7 @@ plan_dup="$(for s in 1 2 3 4 5 6 RU RU_2; do eval "p=\${PORT_$s}"; [ -n "$p" ] &
 if [ -n "$plan_dup" ]; then
 err_msg "План отменён: порт $plan_dup назначен нескольким DNS одновременно."; tx_restore_on_failure; return 1
 fi
-uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH."; tx_restore_on_failure; return 1; }
+uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH. Проверьте права доступа к /etc/config/https-dns-proxy и убедитесь, что файл не поврежден."; tx_restore_on_failure; return 1; }
 reconcile_dnsmasq || { err_msg "Не удалось настроить dnsmasq."; tx_restore_on_failure; return 1; }
 if [ "$NTP_IP_FALLBACK" = 1 ]; then
 apply_ntp_if_needed || { err_msg "Не удалось настроить NTP по IP."; tx_restore_on_failure; return 1; }
