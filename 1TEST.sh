@@ -987,14 +987,17 @@ done
 # ----- Принудительный перехват DNS (безопасный DoH-форсинг) -----
 apply_dns_force() {
     [ "$FORCE_DOH" = 1 ] || return 0
-    local lan_ip="$LAN_IP"
-    [ -n "$lan_ip" ] || lan_ip="192.168.1.1"
 
-    # 1. Canary Domain: отключение DoH в браузерах
+    # Автоопределение LAN IP, если переменная пуста
+    local lan_ip="$LAN_IP"
+    [ -z "$lan_ip" ] && lan_ip="$(uci -q get network.lan.ipaddr | cut -d'/' -f1)"
+    [ -z "$lan_ip" ] && lan_ip="192.168.1.1"
+
+    # 1. Canary Domain: отключение DoH в браузерах (Firefox/Chrome)
     uci del_list dhcp.@dnsmasq[0].address='/use-application-dns.net/' 2>/dev/null
     uci add_list dhcp.@dnsmasq[0].address='/use-application-dns.net/'
 
-    # 2. Перехват DNS (DNAT порта 53 на роутер)
+    # 2. Перехват DNS (DNAT порта 53 на локальный IP)
     uci -q delete firewall.dns_intercept
     uci set firewall.dns_intercept=redirect
     uci set firewall.dns_intercept.name='Force-Local-DNS'
@@ -1017,24 +1020,26 @@ apply_dns_force() {
 
     uci commit dhcp
     uci commit firewall
-    /etc/init.d/dnsmasq restart
-    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload; else /etc/init.d/firewall restart; fi
+    /etc/init.d/dnsmasq restart >/dev/null 2>&1
+    if [ "$SYS_FW" = "fw4" ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+
     record_own "firewall" "dns_intercept" "enabled" "lan_ip=$lan_ip"
     record_own "firewall" "dot_block" "enabled" ""
     ok_msg "Безопасный перехват DNS включён (DNAT 53, REJECT 853, canary domain)."
 }
 
 remove_dns_force() {
-    # Удаляем canary домен
-    uci del_list dhcp.@dnsmasq[0].address='/use-application-dns.net/' 2>/dev/null
+    FORCE_DOH=0   # <-- Синхронизация состояния
 
-    # Удаляем правила firewall
+    uci del_list dhcp.@dnsmasq[0].address='/use-application-dns.net/' 2>/dev/null
     uci -q delete firewall.dns_intercept
     uci -q delete firewall.dot_block
+
     uci commit dhcp
     uci commit firewall
-    /etc/init.d/dnsmasq restart
-    if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload; else /etc/init.d/firewall restart; fi
+    /etc/init.d/dnsmasq restart >/dev/null 2>&1
+    if [ "$SYS_FW" = "fw4" ]; then /etc/init.d/firewall reload >/dev/null 2>&1; else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+
     ok_msg "Принудительный перехват DNS отключён."
 }
 apply_bogus() {
@@ -1299,6 +1304,9 @@ fi
 uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH. Проверьте права доступа к /etc/config/https-dns-proxy и убедитесь, что файл не поврежден."; tx_restore_on_failure; return 1; }
 reconcile_dnsmasq || { err_msg "Не удалось настроить dnsmasq."; tx_restore_on_failure; return 1; }
 if [ "$NTP_IP_FALLBACK" = 1 ]; then
+if [ "$FORCE_DOH" = 1 ]; then
+    apply_dns_force || { err_msg "Не удалось применить перехват DNS."; tx_restore_on_failure; return 1; }
+fi
 apply_ntp_if_needed || { err_msg "Не удалось настроить NTP по IP."; tx_restore_on_failure; return 1; }
 fi
 if [ "$BLOCK_QUIC" = 1 ]; then apply_quic || { err_msg "Не удалось применить блокировку QUIC."; tx_restore_on_failure; return 1; }; fi
@@ -1353,6 +1361,10 @@ uci commit dhcp 2>/dev/null
 for r in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
 while :; do idx="$(uci show firewall 2>/dev/null | grep "name='$r'" | head -n1 | cut -d. -f2 | cut -d= -f1)"; [ -n "$idx" ] || break; uci -q delete "firewall.$idx"; done
 done
+# Удаляем свои правила перехвата DNS, если они были созданы
+if grep -q 'firewall|dns_intercept|enabled' "$OWNERSHIP" 2>/dev/null; then
+    remove_dns_force
+fi
 uci commit firewall 2>/dev/null
 if [ -f /etc/sysctl.d/90-dns-manager.conf ]; then
 for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
@@ -1848,7 +1860,8 @@ menu_extras() {
         printf "  ${C_YELLOW}[5]${C_NC} Резерв времени по IP: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
         printf "  ${C_YELLOW}[6]${C_NC} Sysctl: %b\n" "$(state_word "$SYSCTL_TUNING")"
         printf "  ${C_YELLOW}[7]${C_NC} Оптимизация Go / Tailscale / TG WS: %b\n" "$(state_word "$GO_OPTIMIZE")"
-        printf "  ${C_YELLOW}[8]${C_NC} IP-заглушки\n"
+        printf "  ${C_YELLOW}[8]${C_NC} Принудительный перехват DNS (безопасный DoH-форсинг): %b\n" "$(state_word "$FORCE_DOH")"
+        printf "  ${C_YELLOW}[9]${C_NC} IP-заглушки\n"
         printf "\n  ${C_GREEN}[Enter]${C_NC} Назад\n\n"
         printf "${C_YELLOW}Выбор:${C_NC} "; safe_read c
         
