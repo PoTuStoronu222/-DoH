@@ -37,7 +37,18 @@ TX_ACTIVE=0
 TX_RESERVED_PORTS=""
 TX_PRE_SLOTS=""
 
-C_RED='[1;31m'; C_GREEN='[1;32m'; C_YELLOW='[1;33m'; C_WHITE='[1;37m'; C_CYAN='[1;37m'; C_TITLE='[1;33m'; C_SECTION='[1;37m'; C_NC='[0m'
+C_RED='\033[1;31m'
+C_GREEN='\033[1;32m'
+C_YELLOW='\033[1;33m'
+C_BLUE='\033[1;34m'
+C_MAGENTA='\033[1;35m'
+C_PINK='\033[1;35m'
+C_CYAN='\033[1;36m'
+C_WHITE='\033[1;37m'
+C_BOLD='\033[1m'
+C_NC='\033[0m'
+C_TITLE='\033[1;33m'
+C_SECTION='\033[1;37m'
 
 log_msg() {
     mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
@@ -682,42 +693,59 @@ ntp_servers_for_profile() {
     esac
 }
 apply_ntp_ip_fallback() {
-    servers="$(ntp_servers_for_profile "$NTP_PRESET")"
-    [ -n "$servers" ] || { warn_msg "NTP-профиль не найден."; return 1; }
-    sec="dns_manager_ntp"
-    if [ "$(uci -q get "system.$sec" 2>/dev/null)" != timeserver ]; then
-        uci set "system.$sec=timeserver" || return 1
-        record_own "uci" "system.$sec" "timeserver" "created"
-    fi
-    existing="$(uci -q get "system.$sec.server" 2>/dev/null)"
+    servers="$(grep -v '^#' "$NTP_CATALOG" 2>/dev/null | grep "^${NTP_PRESET}|" | head -1 | cut -d'|' -f4)"
+    [ -n "$servers" ] || { warn_msg "NTP-профиль '$NTP_PRESET' не найден в каталоге."; return 1; }
+
+    # Удаляем ВСЕ старые NTP серверы из основной секции
+    while uci -q delete system.ntp.server >/dev/null 2>&1; do :; done
+
+    # Записываем наши серверы в ОСНОВНУЮ секцию system.ntp
     for ipx in $servers; do
-        echo "$existing" | tr ' ' '\n' | grep -qxF "$ipx" || { uci add_list "system.$sec.server=$ipx"; record_own "ntp" "server" "$ipx" "section=$sec"; }
+        uci add_list system.ntp.server="$ipx"
     done
-    uci set "system.$sec.enabled=1"
+    uci set system.ntp.enabled='1'
+    uci set system.ntp.use_dhcp='0'
     uci commit system
-    ok_msg "Резерв времени по IP настроен в отдельной секции без удаления существующих NTP."
-    log_tx "APPLY" "NTP" "ADD" "OK" "profile=$NTP_PRESET"
+
+    # Перезапуск sysntpd для немедленной синхронизации
+    /etc/init.d/sysntpd restart >/dev/null 2>&1
+
+    record_own "ntp" "system.ntp.server" "$servers" "profile=$NTP_PRESET"
+    ok_msg "NTP: серверы заменены на профиль '$NTP_PRESET' в основной секции system.ntp"
+    log_tx "APPLY" "NTP" "REPLACE" "OK" "profile=$NTP_PRESET;servers=$servers"
 }
+
 menu_ntp() {
     clear_screen
     menu_header "🕐 ВРЕМЯ / NTP"
-    printf "  ${C_GREEN}[1]${C_NC} Cloudflare — IP, без DNS, без leap-smear\n"
-    printf "  ${C_BLUE}[2]${C_NC} NIST — несколько независимых IP, без DNS\n"
-    printf "  ${C_YELLOW}[3]${C_NC} ВНИИФТРИ Москва — 5 IP\n"
-    printf "  ${C_CYAN}[4]${C_NC} ВНИИФТРИ все регионы — 12 IP\n"
-    printf "  ${C_MAGENTA}[5]${C_NC} Google — 4 IP, отдельный leap-smear профиль\n"
-    printf "  ${C_WHITE}[6]${C_NC} Текущий профиль: %s\n" "$NTP_PRESET"
-    printf "${C_WHITE}[Enter]${C_NC} Назад  |  ${C_YELLOW}Выбор:${C_NC} "; safe_read c
+    
+    # Показываем ТЕКУЩИЕ серверы из UCI
+    _cur_ntp="$(uci -q get system.ntp.server 2>/dev/null)"
+    printf "${C_WHITE}Текущие NTP серверы:${C_NC}\n"
+    if [ -n "$_cur_ntp" ]; then
+        for _s in $_cur_ntp; do
+            printf "  ${C_GREEN}•${C_NC} %s\n" "$_s"
+        done
+    else
+        printf "  ${C_YELLOW}(не настроены)${C_NC}\n"
+    fi
+    printf "\n${C_WHITE}Выбранный профиль: ${C_YELLOW}%s${C_NC}\n\n" "$NTP_PRESET"
+    
+    printf "  ${C_GREEN}[1]${C_NC} Cloudflare (IP, без DNS)\n"
+    printf "  ${C_BLUE}[2]${C_NC} NIST (несколько IP)\n"
+    printf "  ${C_YELLOW}[3]${C_NC} ВНИИФТРИ Москва\n"
+    printf "  ${C_CYAN}[4]${C_NC} Google (IP, leap-smear)\n"
+    printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
     case "$c" in
-        1) NTP_PRESET=cf_ip;;
-        2) NTP_PRESET=nist_ip;;
-        3) NTP_PRESET=vniiftri_moscow;;
-        4) NTP_PRESET=vniiftri_all;;
-        5) NTP_PRESET=google_ip;;
+        1) NTP_PRESET="cf_ip";;
+        2) NTP_PRESET="nist_ip";;
+        3) NTP_PRESET="vniiftri_moscow";;
+        4) NTP_PRESET="google_ip";;
         *) return;;
     esac
     save_config
-    if confirm_action "Применить IP-резерв NTP сейчас?"; then apply_ntp_ip_fallback; pause; fi
+    apply_ntp_ip_fallback
+    pause
 }
 
 # ----- DNS ownership and ports -----
@@ -804,17 +832,15 @@ ensure_doh_slot() {
             free_port || return 1
             target="$FREE_PORT_RESULT"
         fi
-        if [ "$target" != "$current" ]; then
-            uci set "https-dns-proxy.@https-dns-proxy[$sec_idx].listen_port=$target" || return 1
-            printf "  ${C_YELLOW}↻ %s: %s → %s${C_NC}\n" "$name" "$current" "$target"
-        else
-            printf "  ${C_WHITE}= %s уже настроен на %s${C_NC}\n" "$name" "$current"
-        fi
-        claim_port_tx "$target" || return 1
-        eval "PORT_$slot=\"$target\""
-        record_own "doh" "$target" "$url" "slot=$slot;name=$name"
-        return 0
-    fi
+                if [ "$target" != "$current" ]; then
+            # Ищем имя секции по порту — надёжнее чем индекс
+            _sec_name="$(uci show https-dns-proxy 2>/dev/null | grep "\.listen_port='$current'" | head -1 | cut -d. -f2)"
+            if [ -n "$_sec_name" ]; then
+                uci set "https-dns-proxy.$_sec_name.listen_port=$target" || return 1
+            else
+                err_msg "Не найдена секция DoH с портом $current"
+                return 1
+            fi
 
     existing="$(find_any_doh_by_url "$url")"
     if [ -n "$existing" ]; then
@@ -839,8 +865,8 @@ ensure_doh_slot() {
         claim_port_tx "$target" || return 1
     fi
 
-    sec=$(uci add https-dns-proxy https-dns-proxy 2>/dev/null) || return 1
-    uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1"
+       sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
+    uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
     uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
     uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
     uci set "https-dns-proxy.$sec.bootstrap_dns=$BOOTSTRAP_DNS" || return 1
@@ -1160,10 +1186,8 @@ hybrid_reconcile_existing() {
             u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
             if [ "$m" = 1 ] && [ "$u" = "$url" ]; then
                 if [ -n "$seen" ]; then
-                    uci -q delete "https-dns-proxy.@https-dns-proxy[$i]" || return 1
-                    i=0
-                    seen=1
-                    continue
+                   uci -q delete "https-dns-proxy.@https-dns-proxy[$i]" || { i=$((i+1)); continue; }
+i=0; seen=1; continue
                 fi
                 seen="$i"
             fi
@@ -1761,19 +1785,19 @@ apply_quic_toggle() {
     if [ "$BLOCK_QUIC" = 1 ]; then
         apply_quic >/dev/null 2>&1
     else
-        # Встроенное безопасное удаление правил QUIC (избегаем missing function)
-        for RULE in Block_UDP_80 Block_UDP_443 DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
-            while :; do 
-                IDX=$(uci show firewall 2>/dev/null | grep "name='$RULE'" | cut -d. -f2 | cut -d= -f1 | head -n1)
-                [ -z "$IDX" ] && break
-                uci -q delete "firewall.$IDX" >/dev/null 2>&1
+        # Удаляем наши правила QUIC по имени
+        for _rname in DnsMgr_QUIC_80 DnsMgr_QUIC_443 Block_UDP_80 Block_UDP_443; do
+            while :; do
+                _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -1 | cut -d. -f2 | cut -d= -f1)"
+                [ -z "$_ridx" ] && break
+                uci -q delete "firewall.$_ridx"
             done
         done
         uci commit firewall >/dev/null 2>&1
     fi
-    if [ "$SYS_FW" = "fw4" ]; then 
+    if [ "$SYS_FW" = "fw4" ]; then
         /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
-    else 
+    else
         /etc/init.d/firewall restart >/dev/null 2>&1
     fi
     save_config
@@ -1830,7 +1854,12 @@ ensure_dependencies(){
     if [ "$PKG_MGR" = "apk" ]; then
         [ "$HAS_DIG" = yes ] || missing="$missing bind-tools"
     else
-        [ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
+            if [ "$HAS_DIG" != yes ]; then
+        if [ "$PKG_MGR" = "apk" ]; then
+            missing="$missing bind-tools"
+        else
+            missing="$missing bind-dig"
+        fi
     fi
     [ "$HAS_HDP" = yes ] || missing="$missing https-dns-proxy"
 
@@ -1979,9 +2008,9 @@ quick_max_bypass() {
 dependency_preflight(){
     run_discovery >/dev/null 2>&1 || true
     printf "${C_TITLE}📦 ПРОВЕРКА ЗАВИСИМОСТЕЙ${C_NC}\n"
-    printf '  curl              : '; bool_text "$HAS_CURL"; printf '\n'
-    printf '  dig               : '; bool_text "$HAS_DIG"; printf '\n'
-    printf '  https-dns-proxy   : '; bool_text "$HAS_HDP"; printf '\n'
+    printf '  curl              : %b\n' "$(state_word "$HAS_CURL")"
+    printf '  dig               : %b\n' "$(state_word "$HAS_DIG")"
+    printf '  https-dns-proxy   : %b\n' "$(state_word "$HAS_HDP")"
     if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
         printf '  CA-сертификаты    : %b✓ ВКЛ%b\n' "$C_GREEN" "$C_NC"
     else
