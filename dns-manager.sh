@@ -55,11 +55,11 @@ confirm_action() {
     _prompt="$1"
     while :; do
         printf "${C_WHITE}%s${C_NC} ${C_GREEN}[✓] Да${C_NC}  ${C_RED}[✗] Нет${C_NC}: " "$_prompt"
-        safe_read _ans
+        read -r _ans
         case "$_ans" in
-            y|Y|yes|YES|д|Д|да|ДА|✓|ok|OK|1) return 0;;
-            n|N|no|NO|н|Н|нет|НЕТ|✗|2|'') return 1;;
-            *) printf "${C_YELLOW}Введите Да/Д или Нет/Н.${C_NC}\n";;
+            y|Y|yes|YES|д|Д|да|ДА|✓|ok|OK|1|'') return 0 ;; # Enter по умолчанию = Да
+            n|N|no|NO|н|Н|нет|НЕТ|✗|2) return 1 ;;
+            *) printf "${C_YELLOW}Введите Да/Д или Нет/Н.${C_NC}\n" ;;
         esac
     done
 }
@@ -1935,7 +1935,7 @@ main_menu() {
         printf "  https-dns-proxy: %b\n" "$(state_word "$HAS_HDP")"
         printf "  DoH обнаружено: ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
         [ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}⚠ force_dns стороннего DoH включён${C_NC}\n"
-        line
+        read -r
 
         printf "${C_BOLD}${C_PINK}🚀 БЫСТРАЯ НАСТРОЙКА${C_NC}\n"
         printf "  ${C_PINK}[1]${C_NC} 🚀 ${C_BOLD}МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД${C_NC}\n"
