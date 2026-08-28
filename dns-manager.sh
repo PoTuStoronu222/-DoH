@@ -2314,3 +2314,18 @@ safe_read c
         esac
 done
 }
+
+preflight_readonly
+init_dirs
+write_catalogs
+load_config
+if [ "${_had_dns_profile:-1}" = 0 ]; then
+hybrid_set_defaults
+save_config
+printf "${C_YELLOW}ℹ Обнаружена старая конфигурация без профиля. Создан основной профиль Hybrid SmartDNS (без изменений роутера).${C_NC}\n"
+fi
+run_discovery
+printf "${C_GREEN}✓ Первый проход завершён. Настройки роутера пока не изменялись.${C_NC}\n"
+printf "${C_YELLOW}ℹ Каталог DNS: %s вариантов. Если найден старый каталог — он сохранён как .previous.${C_NC}\n" "$(count_dns)"
+log_msg "START v$VERSION OpenWrt=$SYS_OWRT target=$SYS_TARGET arch=$SYS_ARCH fw=$SYS_FW"
+main_menu
