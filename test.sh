@@ -1418,27 +1418,27 @@ error|fail) printf "${C_RED}ОШИБКА${C_NC}";;
 esac
 }
 status_ru() {
-case "$1" in
-OK) printf '%s' '✓ работает';;
-BOOTSTRAP_FAIL) printf '%s' '⚠ не удалось определить адрес сервера';;
-BAD_DOH_RESPONSE) printf '%s' '⚠ неверный ответ DoH';;
-CURL_TIMEOUT|CURL_TIMEOUT*) printf '%s' '✗ тайм-аут соединения';;
-TLS_ERROR|TLS_ERROR*) printf '%s' '✗ ошибка TLS/сертификата';;
-CONNECTION_ERROR|CONNECTION_ERROR*) printf '%s' '✗ сервер недоступен';;
-DNS_ERROR|DNS_ERROR*) printf '%s' '✗ ошибка DNS-запроса';;
-HTTP_400) printf '%s' '✗ сервер отклонил запрос (400)';;
-HTTP_401) printf '%s' '✗ требуется авторизация (401)';;
-HTTP_403) printf '%s' '✗ доступ запрещён (403)';;
-HTTP_404) printf '%s' '✗ адрес DoH не найден (404)';;
-HTTP_429) printf '%s' '✗ слишком много запросов (429)';;
-HTTP_500) printf '%s' '✗ ошибка сервера (500)';;
-HTTP_502) printf '%s' '✗ шлюз сервера недоступен (502)';;
-HTTP_503) printf '%s' '✗ сервис временно недоступен (503)';;
-HTTP_504) printf '%s' '✗ сервер не ответил вовремя (504)';;
-HTTP_*) printf '%s' "✗ ответ HTTPS: код ${1#HTTP_}";;
-CURL_ERROR*) printf '%s' '✗ ошибка соединения HTTPS';;
-*) printf '%s' '✗ неизвестная ошибка';;
-esac
+    case "$1" in
+        OK) printf '%s' '✓ работает';;
+        BOOTSTRAP_FAIL) printf '%s' '⚠ не удалось определить адрес сервера';;
+        BAD_DOH_RESPONSE) printf '%s' '⚠ неверный ответ DoH';;
+        CURL_TIMEOUT|CURL_TIMEOUT*) printf '%s' '✗ тайм-аут соединения';;
+        TLS_ERROR|TLS_ERROR*) printf '%s' '✗ ошибка TLS/сертификата';;
+        CONNECTION_ERROR|CONNECTION_ERROR*) printf '%s' '✗ сервер недоступен';;
+        DNS_ERROR|DNS_ERROR*) printf '%s' '✗ ошибка DNS-запроса';;
+        HTTP_400) printf '%s' '✗ сервер отклонил запрос (400)';;
+        HTTP_401) printf '%s' '✗ требуется авторизация (401)';;
+        HTTP_403) printf '%s' '✗ доступ запрещён (403)';;
+        HTTP_404) printf '%s' '✗ адрес DoH не найден (404)';;
+        HTTP_429) printf '%s' '✗ слишком много запросов (429)';;
+        HTTP_500) printf '%s' '✗ ошибка сервера (500)';;
+        HTTP_502) printf '%s' '✗ шлюз сервера недоступен (502)';;
+        HTTP_503) printf '%s' '✗ сервис временно недоступен (503)';;
+        HTTP_504) printf '%s' '✗ сервер не ответил вовремя (504)';;
+        HTTP_*) printf '%s' "✗ ответ HTTPS: код ${1#HTTP_}";;
+        CURL_ERROR*) printf '%s' '✗ ошибка соединения HTTPS';;
+        *) printf '%s' '✗ неизвестная ошибка';;
+    esac
 }
 category_ru() {
 case "$1" in
