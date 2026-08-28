@@ -518,6 +518,7 @@ printf '%s|%s|%s|%s|%s\n' "$id" "$cat" "$name" "$ms" "$st" > "$TMP_DIR/t.$id"
 rm -f "$q" "$body" "$hdr"
 }
 test_dns_catalog() {
+    [ "$HAS_CURL" = yes ] || {
 [ "$HAS_CURL" = yes ] || { warn_msg "curl не установлен. Сначала установите его через пункт I."; return 1; }
 rm -f "$TMP_DIR/t."* "$TMP_DIR/q."* "$TMP_DIR/body."* "$TMP_DIR/h."* "$TEST_RESULTS" 2>/dev/null
 total="$(count_dns)"
@@ -1118,42 +1119,46 @@ if [ -n "$SLOT_RU_2" ]; then verify_local_doh_slot "RU2" "$SLOT_RU_2" "$PORT_RU_
 return 0
 }
 verify_after_apply() {
-# Даем сервисам время подняться (увеличили с 2 до 6 секунд)
-sleep 6
-if /etc/init.d/dnsmasq status >/dev/null 2>&1; then DNSMASQ_RUN="yes"; elif pgrep -x dnsmasq >/dev/null 2>&1; then DNSMASQ_RUN="yes"; else DNSMASQ_RUN="no"; fi
-[ "$DNSMASQ_RUN" = yes ] || { err_msg "dnsmasq не запущен после перезапуска и ожидания."; return 1; }
-if [ "$DOH_TOTAL" -gt 0 ]; then
-pgrep -f 'https-dns-proxy' >/dev/null 2>&1 || { err_msg "https-dns-proxy не запущен."; return 1; }
-# Перебираем порты аккуратно, давая каждой итерации небольшой шанс на разогрев
-for p in "$PORT_1" "$PORT_2" "$PORT_3" "$PORT_4" "$PORT_5" "$PORT_6" "$PORT_RU" "$PORT_RU_2"; do
-[ -n "$p" ] || continue
-# Попытка проверить порт с небольшой микропаузой, если порт еще не открылся
-local resolved=0
-for i in 1 2 3; do
-if netstat -an 2>/dev/null | grep -qE ":$p([[:space:]]|$)" || ( [ -s "$LISTENERS" ] && grep -qE ":$p([[:space:]]|$)" "$LISTENERS" 2>/dev/null ); then
-resolved=1
-break
-fi
-sleep 1
-done
-[ "$resolved" -eq 1 ] || { err_msg "DoH порт $p не слушается. Проверьте конфигурацию https-dns-proxy и убедитесь, что порт не занят другим процессом."; return 1; }
-done
-fi
-# Финальная проверка локального резолвера с тремя попытками
-local dns_ok=0
-for i in 1 2 3; do
-if command -v nslookup >/dev/null 2>&1; then
-if nslookup example.com 127.0.0.1 >/dev/null 2>&1; then dns_ok=1; break; fi
-elif command -v dig >/dev/null 2>&1; then
-if dig +time=2 +tries=1 @127.0.0.1 example.com A >/dev/null 2>&1; then dns_ok=1; break; fi
-else
-dns_ok=1; break # Если нет утилит тестирования, пропускаем эту проверку
-fi
-sleep 1
-done
-[ "$dns_ok" -eq 1 ] || { err_msg "Локальный DNS через 127.0.0.1 не отвечает."; return 1; }
-if [ "$DOH_TOTAL" -gt 0 ]; then verify_all_selected_doh || return 1; fi
-return 0
+    # Даем сервисам больше времени на инициализацию (procd стартует асинхронно)
+    sleep 8
+    
+    if /etc/init.d/dnsmasq status >/dev/null 2>&1; then DNSMASQ_RUN="yes"; elif pgrep -x dnsmasq >/dev/null 2>&1; then DNSMASQ_RUN="yes"; else DNSMASQ_RUN="no"; fi
+    [ "$DNSMASQ_RUN" = yes ] || { err_msg "dnsmasq не запущен после перезапуска и ожидания."; return 1; }
+    
+    if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = "hybrid" ]; then
+        pgrep -f 'https-dns-proxy' >/dev/null 2>&1 || { err_msg "https-dns-proxy не запущен."; return 1; }
+        
+        for p in "$PORT_1" "$PORT_2" "$PORT_3" "$PORT_4" "$PORT_5" "$PORT_6" "$PORT_RU" "$PORT_RU_2"; do
+            [ -n "$p" ] || continue
+            local resolved=0
+            # Увеличиваем количество попыток до 10 (суммарно до 20 секунд ожидания)
+            # Убираем старый $LISTENERS, проверяем только актуальный статус через ss/netstat
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+                if ss -lntup 2>/dev/null | grep -qE "[:.]$p([[:space:]]|$)" || netstat -an 2>/dev/null | grep -qE "[:.]$p([[:space:]]|$)"; then
+                    resolved=1
+                    break
+                fi
+                sleep 2
+            done
+            [ "$resolved" -eq 1 ] || { err_msg "DoH порт $p не слушается (сервис не успел подняться)."; return 1; }
+        done
+    fi
+    
+    # Финальная проверка локального резолвера
+    local dns_ok=0
+    for i in 1 2 3 4 5; do
+        if command -v nslookup >/dev/null 2>&1; then
+            if nslookup example.com 127.0.0.1 >/dev/null 2>&1; then dns_ok=1; break; fi
+        elif command -v dig >/dev/null 2>&1; then
+            if dig +time=2 +tries=1 @127.0.0.1 example.com A >/dev/null 2>&1; then dns_ok=1; break; fi
+        else
+            dns_ok=1; break
+        fi
+        sleep 2
+    done
+    [ "$dns_ok" -eq 1 ] || { err_msg "Локальный DNS через 127.0.0.1 не отвечает."; return 1; }
+    
+    return 0
 }
 tx_snapshot_start() {
 TX_DIR="$STATE_DIR/tx-$TX_ID"
@@ -1726,6 +1731,7 @@ printf "${C_GREEN}✓ Автоматически выбран набор DNS б�
 for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
 [ -n "$SLOT_RU" ] && printf "  ${C_WHITE}RU: %s${C_NC}\n" "$(dns_name "$SLOT_RU")"
 [ -n "$SLOT_RU_2" ] && printf "  ${C_WHITE}RU2: %s${C_NC}\n" "$(dns_name "$SLOT_RU_2")"
+return 0
 }
 menu_best_actions() {
 goal="$1"; title="$2"
