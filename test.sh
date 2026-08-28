@@ -1059,14 +1059,25 @@ elif ! grep -q '^# DNS_MANAGER_MANAGED=1$' "$conf"; then
 warn_msg "$conf уже существует и не помечен DNS Manager. Не меняю его."
 pause; return
 fi
+added=0
+total_rows="$(grep -v '^#' "$BOGUS_CATALOG" 2>/dev/null | wc -l | tr -d ' ')"
 for n in $pick; do
+case "$n" in *[!0-9]*|'') warn_msg "Не число: $n"; continue;; esac
+[ "$n" -ge 1 ] && [ "$n" -le "$total_rows" ] || { warn_msg "Номер $n вне диапазона 1..$total_rows"; continue; }
 row="$(grep -v '^#' "$BOGUS_CATALOG" | sed -n "${n}p")"
 ip="$(printf '%s' "$row" | cut -d'|' -f3)"; status="$(printf '%s' "$row" | cut -d'|' -f6)"
 case "$status" in manual-only|needs-runtime-check) warn_msg "$ip нельзя применять автоматически: статус=$status"; continue;; esac
-[ -n "$ip" ] && ! grep -qxF "bogus-nxdomain=$ip" "$conf" 2>/dev/null && printf 'bogus-nxdomain=%s\n' "$ip" >> "$conf"
+if [ -n "$ip" ] && ! grep -qxF "bogus-nxdomain=$ip" "$conf" 2>/dev/null; then
+printf 'bogus-nxdomain=%s\n' "$ip" >> "$conf"
+added=$((added+1))
+fi
 done
+if [ "$added" -gt 0 ]; then
 /etc/init.d/dnsmasq restart 2>/dev/null
-ok_msg "Выбранные подтверждённые bogus-nxdomain добавлены."
+ok_msg "Добавлено заглушек: $added."
+else
+info_msg "Ни одной новой заглушки не добавлено."
+fi
 pause
 }
 apply_ntp_if_needed() {
@@ -1077,35 +1088,56 @@ verify_doh_endpoint_url() {
 url="$1"; name="$2"
 host="$(url_host "$url")"; port_n="$(url_port "$url")"
 ipx="$(resolve_host "$host")"
-[ -n "$ipx" ] || { err_msg "DoH «$name»: не удалось определить адрес $host."; return 1; }
+[ -n "$ipx" ] || { warn_msg "DoH «$name»: не удалось определить адрес $host (проверка пропущена)."; return 1; }
 q="$TMP_DIR/vq.$$"; body="$TMP_DIR/vb.$$"; hdr="$TMP_DIR/vh.$$"
 printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$q"
-code="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout 3 --max-time 6 --resolve "$host:$port_n:$ipx" -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' --data-binary "@$q" "$url" 2>/dev/null)"
+code="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}' --connect-timeout 3 --max-time 6 \
+--resolve "$host:$port_n:$ipx" -H 'Content-Type: application/dns-message' \
+-H 'Accept: application/dns-message' --data-binary "@$q" "$url" 2>/dev/null)"
 bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"; [ -n "$bytes" ] || bytes=0
 ctype="$(awk -F': *' 'tolower($1)=="content-type"{print tolower($2)}' "$hdr" 2>/dev/null | tail -n1 | tr -d '\r')"
 rm -f "$q" "$body" "$hdr"
-[ "$code" = 200 ] || { err_msg "DoH «$name»: HTTPS вернул код ${code:-000}."; return 1; }
-case "$ctype" in *application/dns-message*) ;; *) err_msg "DoH «$name»: неверный Content-Type ответа."; return 1;; esac
-[ "$bytes" -ge 12 ] || { err_msg "DoH «$name»: получен некорректный DNS-ответ."; return 1; }
+[ "$code" = 200 ] || { warn_msg "DoH «$name»: код ${code:-000} (проверка пропущена)."; return 1; }
+case "$ctype" in *application/dns-message*) ;; *) warn_msg "DoH «$name»: неверный Content-Type (пропущено)."; return 1;; esac
+[ "$bytes" -ge 12 ] || { warn_msg "DoH «$name»: пустой ответ (пропущено)."; return 1; }
 return 0
 }
+
 verify_local_doh_slot() {
 slot="$1"; id="$2"; port_n="$3"
 name="$(dns_name "$id")"; url="$(normalize_url "$(dns_url "$id")")"
 [ -n "$id" ] && [ -n "$port_n" ] && [ -n "$url" ] || return 1
+# 1) секция dns_manager=1 указывает на выбранный URL
 sec_url=""; i=0
 while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
 m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
 p="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].listen_port" 2>/dev/null)"
-if [ "$m" = "1" ] && [ "$p" = "$port_n" ]; then sec_url="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"; break; fi
+if [ "$m" = "1" ] && [ "$p" = "$port_n" ]; then
+sec_url="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
+break
+fi
 i=$((i+1))
 done
 [ "$sec_url" = "$url" ] || { err_msg "Слот $slot: порт $port_n указывает не на выбранный DoH «$name»."; return 1; }
+# 2) локальный порт слушает (до 5 сек на старт)
+ok=0; i=1
+while [ "$i" -le 5 ]; do
+netstat -an 2>/dev/null | grep -qE ":$port_n([[:space:]]|$)" && { ok=1; break; }
+sleep 1; i=$((i+1))
+done
+[ "$ok" = 1 ] || { err_msg "Слот $slot: 127.0.0.1:$port_n не слушается."; return 1; }
+# 3) локальный резолвер отвечает
 if command -v dig >/dev/null 2>&1; then
- dig +time=3 +tries=1 @127.0.0.1 -p "$port_n" example.com A >/dev/null 2>&1 || { err_msg "Слот $slot: локальный DoH 127.0.0.1:$port_n не отвечает."; return 1; }
+dig +time=2 +tries=1 @127.0.0.1 -p "$port_n" example.com A >/dev/null 2>&1 || { err_msg "Слот $slot: локальный резолвер не отвечает."; return 1; }
+elif command -v nslookup >/dev/null 2>&1; then
+nslookup example.com 127.0.0.1 >/dev/null 2>&1 || { err_msg "Слот $slot: локальный резолвер не отвечает."; return 1; }
 fi
-verify_doh_endpoint_url "$url" "$name" || return 1
+# 4) внешний эндпоинт — только предупреждение, НЕ причина отката
+if verify_doh_endpoint_url "$url" "$name"; then
 printf "  ${C_GREEN}✓${C_NC} Слот %s: 127.0.0.1:%s → %s подтверждён.\n" "$slot" "$port_n" "$name"
+else
+warn_msg "Слот $slot: «$name» не отвечает напрямую — слот оставлен, трафик пойдёт через резервные DoH."
+fi
 return 0
 }
 verify_all_selected_doh() {
