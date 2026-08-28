@@ -540,8 +540,20 @@ test_dns_catalog() {
     okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
     failn=$((total - okn))
 
-    printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
+    printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n\n" "$okn" "$failn" "$total"
     log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
+
+    # Вывод подробного списка результатов
+    if [ -f "$TEST_RESULTS" ]; then
+        printf "%-35s | %-12s | %-8s | %s\n" "НАЗВАНИЕ" "КАТЕГОРИЯ" "ЗАДЕРЖКА" "СТАТУС"
+        printf "───────────────────────────────────────────────────────────────────\n"
+        awk -F'|' '{
+            ms = ($4 == "-1") ? "ERR" : $4 "ms";
+            printf "%-35s | %-12s | %-8s | %s\n", $3, $2, ms, $5
+        }' "$TEST_RESULTS" | sort -n -k3
+    fi
+
+    pause
 }
 show_best_category() {
 cat="$1"; limit="$2"
