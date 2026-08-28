@@ -519,24 +519,29 @@ rm -f "$q" "$body" "$hdr"
 }
 test_dns_catalog() {
     [ "$HAS_CURL" = yes ] || { warn_msg "curl не установлен. Сначала установите его через пункт I."; return 1; }
-    rm -f "$TMP_DIR/t."* "$TMP_DIR/q."* "$TMP_DIR/body."* "$TMP_DIR/h."* "$TEST_RESULTS" 2>/dev/null
+    
+    # Гарантируем наличие временной директории и очищаем предыдущие запуски
+    mkdir -p "$TMP_DIR"
+    rm -f "$TMP_DIR"/t.* "$TMP_DIR"/q.* "$TMP_DIR"/body.* "$TMP_DIR"/h.* "$TEST_RESULTS" 2>/dev/null
+
     total="$(count_dns)"
-rm -f "$TMP_DIR/t."* "$TMP_DIR/q."* "$TMP_DIR/body."* "$TMP_DIR/h."* "$TEST_RESULTS" 2>/dev/null
-total="$(count_dns)"
-printf "${C_WHITE}Проверяю %s DNS/DoH параллельно...${C_NC} ${C_YELLOW}(может занять до 5 минут)${C_NC}\n" "$total"
-n=0
-while IFS='|' read -r id _rest; do
-case "$id" in ''|\#*) continue;; esac
-test_one_dns "$id" &
-n=$((n+1))
-[ $((n % 8)) -eq 0 ] && wait
-done < "$DNS_CATALOG"
-wait
-cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
-okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
-failn=$((total-okn))
-printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
-log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
+    printf "${C_WHITE}Проверяю %s DNS/DoH параллельно...${C_NC} ${C_YELLOW}(может занять до 5 минут)${C_NC}\n" "$total"
+
+    n=0
+    while IFS='|' read -r id _rest; do
+        case "$id" in ''|\#*) continue;; esac
+        test_one_dns "$id" &
+        n=$((n+1))
+        [ $((n % 8)) -eq 0 ] && wait
+    done < "$DNS_CATALOG"
+    wait
+
+    cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
+    okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
+    failn=$((total - okn))
+
+    printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
+    log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
 }
 show_best_category() {
 cat="$1"; limit="$2"
@@ -2275,7 +2280,7 @@ safe_read c
             5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ" ;;
             6) show_best ;;
             7) show_map ;;
-            8) test_dns_catalog ;;
+            8) test_dns_catalog ;; pause ;;
             9) menu_slots ;;
             10) menu_bootstrap ;;
             11) menu_ntp ;;
