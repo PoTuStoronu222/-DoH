@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# DNS Manager — Hybrid SmartDNS
+# DNS Manager V1.1 — Hybrid SmartDNS
 # DNS/DoH Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
 # Первым делом читает реальное состояние роутера.
 #
@@ -36,18 +36,18 @@ TX_ACTIVE=0
 TX_RESERVED_PORTS=""
 TX_PRE_SLOTS=""
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
-C_RED='\033[1;31m'
-C_GREEN='\033[1;32m'
-C_YELLOW='\033[1;33m'
-C_BLUE='\033[1;34m'
-C_MAGENTA='\033[1;35m'
-C_PINK='\033[1;35m'
-C_CYAN='\033[1;36m'
-C_WHITE='\033[1;37m'
-C_BOLD='\033[1m'
-C_NC='\033[0m'
-C_TITLE='\033[1;33m'
-C_SECTION='\033[1;37m'
+C_RED="$(printf '\033[38;5;196m')"      # Неоново-красный
+C_GREEN="$(printf '\033[38;5;82m')"     # Ядовито-салатовый
+C_YELLOW="$(printf '\033[38;5;226m')"   # Лимонно-жёлтый
+C_BLUE="$(printf '\033[38;5;39m')"      # Ярко-голубой
+C_MAGENTA="$(printf '\033[38;5;201m')"  # Неоново-розовый
+C_PINK="$(printf '\033[38;5;207m')"     # Розовый
+C_CYAN="$(printf '\033[38;5;51m')"      # Яркая бирюза
+C_WHITE="$(printf '\033[38;5;231m')"    # Ярко-белый
+C_BOLD="$(printf '\033[1m')"
+C_NC="$(printf '\033[0m')"
+C_TITLE="$(printf '\033[38;5;220m')"    # Золотисто-жёлтый
+C_SECTION="$(printf '\033[38;5;255m')"  # Чистый белый
 log_msg() {
 mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
 printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null
