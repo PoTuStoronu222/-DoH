@@ -2292,7 +2292,7 @@ safe_read c
             5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ" ;;
             6) show_best ;;
             7) show_map ;;
-            8) test_dns_catalog; pause ;;
+            8) test_dns_catalog ;;
             9) menu_slots ;;
             10) menu_bootstrap ;;
             11) menu_ntp ;;
