@@ -11,12 +11,12 @@
 #   - Bootstrap DNS
 #   - Bogus-NXDOMAIN каталог (только явно выбранные пользователем)
 #   - обнаружение Zapret/Proxy/VPN/TG WS/Tailscale/SmartDNS/Unbound/AdGuard/MosDNS
-#   - ownership OURS / FOREIGN / UNKNOWN
-#   - ADD/UPDATE своих объектов, KEEP чужих
+#   - проверка состояния DNS/DoH и локального DNS-порта 53
+#   - замена DNS-слоя после явного подтверждения
 #   - журнал и транзакции
 # ============================================================
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="1.1-HYBRID"
+VERSION="1.2-HYBRID-CORE"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -113,8 +113,8 @@ if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FINAL-HYBRID' "$DNS_CA
 cat > "$DNS_CATALOG" <<'EOF_DNS'
 # DNSCATVER=6.6-FINAL-HYBRID
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
-# Main catalog: only endpoints with current published documentation/directory evidence.
-# Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
+# Основной каталог: опубликованные и проверяемые DoH-endpoint'ы.
+# Доступность каждого endpoint проверяется непосредственно с роутера.
 # --- Обход блокировок / региональных ограничений ---
 mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
 astracat|bypass|geo+ads+services|Astrakat DNS|https://dns.astrakat.ru/dns-query|ru/global|user-confirmed-current
@@ -216,7 +216,7 @@ pool_global|pool|NTP Pool Global||||hostname|no-smear|runtime-check
 pool_ru|pool|NTP Pool Russia||||hostname|no-smear|runtime-check
 EOF_NTP
 fi
-if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FIX13' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
+if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=1.2' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
 [ -s "$BOOTSTRAP_CATALOG" ] && cp -f "$BOOTSTRAP_CATALOG" "$BOOTSTRAP_CATALOG.previous" 2>/dev/null
 cat > "$BOOTSTRAP_CATALOG" <<'EOF_BOOT'
 # BOOTSTRAPCATVER=6.6-FINAL-HYBRID
@@ -232,7 +232,7 @@ controld|Control D|76.76.2.0,76.76.10.0|2606:1a40::0,2606:1a40:1::0|bootstrap|ve
 mullvad|Mullvad|194.242.2.2,194.242.2.3|2a07:e340::2,2a07:e340::3|bootstrap|verified-current
 EOF_BOOT
 fi
-if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FIX13' "$BOGUS_CATALOG" 2>/dev/null; then
+if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=1.2' "$BOGUS_CATALOG" 2>/dev/null; then
 [ -s "$BOGUS_CATALOG" ] && cp -f "$BOGUS_CATALOG" "$BOGUS_CATALOG.previous" 2>/dev/null
 cat > "$BOGUS_CATALOG" <<'EOF_BOGUS'
 # BOGUSCATVER=6.6-FINAL-HYBRID
@@ -268,6 +268,7 @@ _had_dns_profile=0
 : "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"
 : "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}"; : "${FORCE_DOH:=0}"
 : "${BALANCER_ENABLED:=1}"; : "${NTP_PRESET:=cf_ip}"; : "${DNS_PROFILE:=hybrid}"
+: "${AUTO_DNS_ONLY:=0}"
 TLD_SPLIT="$TLD_RU_ENABLED"
 if [ "$_had_dns_profile" = 0 ] && [ -z "$DNS_PROFILE" ]; then
 DNS_PROFILE="hybrid"
@@ -379,7 +380,6 @@ OTHER_TGRS="no"; pgrep -f tg-ws-proxy-rs >/dev/null 2>&1 && OTHER_TGRS="yes"
 OTHER_TGMT="no"; pgrep -f tg-ws-proxy-mtproto >/dev/null 2>&1 && OTHER_TGMT="yes"
 OTHER_BYEDPI="no"; { [ -x /etc/init.d/byedpi ] || pgrep -f byedpi >/dev/null 2>&1; } && OTHER_BYEDPI="yes"
 OTHER_TAILSCALE="no"; [ -x /etc/init.d/tailscale ] && OTHER_TAILSCALE="yes"
-# Compatibility aliases used by the status screen.
 HAS_ZAPRET="$OTHER_ZAPRET"
 HAS_ZAPRET2="$OTHER_ZAPRET2"
 HAS_NETSHIFT="$OTHER_NETSHIFT"
@@ -520,8 +520,7 @@ rm -f "$q" "$body" "$hdr"
 test_dns_catalog() {
     [ "$HAS_CURL" = yes ] || { warn_msg "curl не установлен. Сначала установите его через пункт I."; return 1; }
     
-    # Гарантируем наличие временной директории и очищаем предыдущие запуски
-    mkdir -p "$TMP_DIR"
+        mkdir -p "$TMP_DIR"
     rm -f "$TMP_DIR"/t.* "$TMP_DIR"/q.* "$TMP_DIR"/body.* "$TMP_DIR"/h.* "$TEST_RESULTS" 2>/dev/null
 
     total="$(count_dns)"
@@ -616,7 +615,6 @@ PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
 [ -n "$SLOT_RU" ] && PORT_RU="$HYBRID_PORT_RU"
 fi
 # Hybrid's primary profile is based on the six preferred endpoints.
-# Only replace a failed primary when automatic mode is explicitly requested.
 if [ "${HYBRID_AUTO_REPAIR:-0}" = 1 ] && [ -s "$TEST_RESULTS" ]; then
 : > "$TMP_DIR/hybrid-used"
 for _s in 1 2 3 4 5 6; do
@@ -1139,23 +1137,28 @@ done
 [ "$sec_url" = "$url" ] || { err_msg "Слот $slot: порт $port_n указывает не на выбранный DoH «$name»."; return 1; }
 # 2) локальный порт слушает (до 5 сек на старт)
 ok=0; i=1
-while [ "$i" -le 5 ]; do
-netstat -an 2>/dev/null | grep -qE ":$port_n([[:space:]]|$)" && { ok=1; break; }
-sleep 1; i=$((i+1))
+while [ "$i" -le 10 ]; do
+if { command -v ss >/dev/null 2>&1 && ss -lntup 2>/dev/null | grep -qE "[:.]$port_n([[:space:]]|$)"; } ||
+   { command -v netstat >/dev/null 2>&1 && netstat -an 2>/dev/null | grep -qE "[:.]$port_n([[:space:]]|$)"; }; then
+    ok=1
+    break
+fi
+sleep 1
+i=$((i+1))
 done
 [ "$ok" = 1 ] || { err_msg "Слот $slot: 127.0.0.1:$port_n не слушается."; return 1; }
 # 3) локальный резолвер отвечает
 if command -v dig >/dev/null 2>&1; then
-dig +time=2 +tries=1 @127.0.0.1 -p "$port_n" example.com A >/dev/null 2>&1 || { err_msg "Слот $slot: локальный резолвер не отвечает."; return 1; }
-elif command -v nslookup >/dev/null 2>&1; then
-nslookup example.com 127.0.0.1 >/dev/null 2>&1 || { err_msg "Слот $slot: локальный резолвер не отвечает."; return 1; }
-fi
-# 4) внешний эндпоинт — только предупреждение, НЕ причина отката
-if verify_doh_endpoint_url "$url" "$name"; then
-printf "  ${C_GREEN}✓${C_NC} Слот %s: 127.0.0.1:%s → %s подтверждён.\n" "$slot" "$port_n" "$name"
+    dig +time=2 +tries=1 @127.0.0.1 -p "$port_n" example.com A >/dev/null 2>&1 || { err_msg "Слот $slot: локальный DNS-порт $port_n не отвечает."; return 1; }
 else
-warn_msg "Слот $slot: «$name» не отвечает напрямую — слот оставлен, трафик пойдёт через резервные DoH."
+    warn_msg "Слот $slot: dig отсутствует, проверка локального DNS-порта пропущена; внешний DoH endpoint будет проверен отдельно."
 fi
+# 4) внешний endpoint должен отвечать
+if ! verify_doh_endpoint_url "$url" "$name"; then
+err_msg "Слот $slot: DoH endpoint «$name» не прошёл прямую проверку."
+return 1
+fi
+printf "  ${C_GREEN}✓${C_NC} Слот %s: 127.0.0.1:%s → %s подтверждён.\n" "$slot" "$port_n" "$name"
 return 0
 }
 verify_all_selected_doh() {
@@ -1177,13 +1180,19 @@ verify_after_apply() {
     
     if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = "hybrid" ]; then
         pgrep -f 'https-dns-proxy' >/dev/null 2>&1 || { err_msg "https-dns-proxy не запущен."; return 1; }
+if [ "$DNS_PROFILE" = hybrid ] && [ -n "$SLOT_RU" ]; then
+    _expected=7
+    _actual="$(uci show https-dns-proxy 2>/dev/null | grep -c 'resolver_url=\|dns_manager=1' 2>/dev/null)"
+    # Проверяем реальное число секций через UCI, не полагаясь на старый инвентарь.
+    _actual=0; _j=0
+    while uci -q get "https-dns-proxy.@https-dns-proxy[$_j].resolver_url" >/dev/null 2>&1; do _actual=$((_actual+1)); _j=$((_j+1)); done
+    [ "$_actual" -eq "$_expected" ] || { err_msg "Hybrid: ожидается 7 DoH-секций, найдено $_actual."; return 1; }
+fi
         
         for p in "$PORT_1" "$PORT_2" "$PORT_3" "$PORT_4" "$PORT_5" "$PORT_6" "$PORT_RU" "$PORT_RU_2"; do
             [ -n "$p" ] || continue
             local resolved=0
-            # Увеличиваем количество попыток до 10 (суммарно до 20 секунд ожидания)
-            # Убираем старый $LISTENERS, проверяем только актуальный статус через ss/netstat
-            for i in 1 2 3 4 5 6 7 8 9 10; do
+                                    for i in 1 2 3 4 5 6 7 8 9 10; do
                 if ss -lntup 2>/dev/null | grep -qE "[:.]$p([[:space:]]|$)" || netstat -an 2>/dev/null | grep -qE "[:.]$p([[:space:]]|$)"; then
                     resolved=1
                     break
@@ -1262,6 +1271,7 @@ fi
 /etc/init.d/https-dns-proxy restart 2>/dev/null || true
 /etc/init.d/dnsmasq restart 2>/dev/null || true
 /etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true
+restore_conflicting_dns
 TX_ACTIVE=0
 log_tx "ROLLBACK" "transaction" "RESTORE" "OK" "dir=$TX_DIR;guarded=yes"
 }
@@ -1355,6 +1365,147 @@ i=$((i+1))
 done
 return 0
 }
+
+# ----- Координация DNS-слоя -----
+service_enabled_state() {
+svc="$1"
+ls /etc/rc.d/S??"$svc" >/dev/null 2>&1 && printf '%s' yes || printf '%s' no
+}
+service_running_state() {
+svc="$1"
+if [ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" status >/dev/null 2>&1; then
+    printf '%s' yes
+elif pgrep -f "$svc" >/dev/null 2>&1; then
+    printf '%s' yes
+else
+    printf '%s' no
+fi
+}
+service_owns_dns53() {
+svc="$1"
+case "$svc" in
+    smartdns) proc='smartdns' ;;
+    unbound) proc='unbound' ;;
+    adguardhome) proc='AdGuardHome' ;;
+    mosdns) proc='mosdns' ;;
+    sing-box) proc='sing-box' ;;
+    *) return 1 ;;
+esac
+if command -v ss >/dev/null 2>&1; then
+    ss -lntup 2>/dev/null | awk '/[:.]53([[:space:]]|$)/ {print}' | grep -qi "$proc" && return 0
+elif command -v netstat >/dev/null 2>&1; then
+    netstat -lntup 2>/dev/null | awk '/[:.]53([[:space:]]|$)/ {print}' | grep -qi "$proc" && return 0
+fi
+return 1
+}
+snapshot_conflicting_dns() {
+mkdir -p "$TX_DIR/services" || return 1
+: > "$TX_DIR/services/dns-frontends"
+for svc in smartdns unbound adguardhome mosdns sing-box; do
+    [ -x "/etc/init.d/$svc" ] || continue
+    if service_owns_dns53 "$svc"; then
+        printf '%s|%s|%s\n' "$svc" "$(service_enabled_state "$svc")" "$(service_running_state "$svc")" >> "$TX_DIR/services/dns-frontends"
+    fi
+done
+}
+stop_conflicting_dns() {
+for svc in smartdns unbound adguardhome mosdns sing-box; do
+    [ -x "/etc/init.d/$svc" ] || continue
+    if service_owns_dns53 "$svc"; then
+        warn_msg "$svc занимает локальный DNS-порт 53. Он будет остановлен и отключён из автозапуска, чтобы dnsmasq стал единственным DNS на 53."
+        "/etc/init.d/$svc" stop >/dev/null 2>&1 || true
+        "/etc/init.d/$svc" disable >/dev/null 2>&1 || true
+    fi
+done
+}
+restore_conflicting_dns() {
+[ -f "$TX_DIR/services/dns-frontends" ] || return 0
+while IFS='|' read -r svc enabled running; do
+    [ -n "$svc" ] || continue
+    if [ "$enabled" = yes ]; then
+        "/etc/init.d/$svc" enable >/dev/null 2>&1 || true
+    else
+        "/etc/init.d/$svc" disable >/dev/null 2>&1 || true
+    fi
+    if [ "$running" = yes ]; then
+        "/etc/init.d/$svc" start >/dev/null 2>&1 || true
+    fi
+done < "$TX_DIR/services/dns-frontends"
+}
+replace_all_doh_instances() {
+found=0
+while uci -q get "https-dns-proxy.@https-dns-proxy[0]" >/dev/null 2>&1; do
+    found=1
+    old_url="$(uci -q get "https-dns-proxy.@https-dns-proxy[0].resolver_url" 2>/dev/null)"
+    old_port="$(uci -q get "https-dns-proxy.@https-dns-proxy[0].listen_port" 2>/dev/null)"
+    printf "  ${C_PINK}↻ Удаляется старый DoH: 127.0.0.1:%s ← %s${C_NC}\n" "${old_port:-?}" "${old_url:-без URL}"
+    uci -q delete "https-dns-proxy.@https-dns-proxy[0]" || return 1
+done
+[ "$found" = 1 ] || info_msg "Старых экземпляров DoH не найдено."
+return 0
+}
+replace_dnsmasq_servers() {
+sec="$(get_dnsmasq_section)"
+uci -q get "dhcp.$sec" >/dev/null 2>&1 || return 1
+# После подтверждения DNS Manager полностью заменяет список upstream DNS dnsmasq.
+while uci -q delete "dhcp.$sec.server" >/dev/null 2>&1; do :; done
+for s in 1 2 3 4 5 6; do
+    eval "id=\${SLOT_$s}"; eval "p=\${PORT_$s}"
+    [ -n "$id" ] && [ -n "$p" ] || continue
+    uci add_list "dhcp.$sec.server=127.0.0.1#$p" || return 1
+done
+if [ "$TLD_RU_ENABLED" = 1 ] && [ -n "$SLOT_RU" ] && [ -n "$PORT_RU" ]; then
+    for t in /ru /su /xn--p1ai; do
+        uci add_list "dhcp.$sec.server=$t/127.0.0.1#$PORT_RU" || return 1
+    done
+fi
+if [ "$TLD_RU_ENABLED" = 1 ] && [ -n "$SLOT_RU_2" ] && [ -n "$PORT_RU_2" ]; then
+    for t in /ru /su /xn--p1ai; do
+        uci add_list "dhcp.$sec.server=$t/127.0.0.1#$PORT_RU_2" || return 1
+    done
+fi
+uci -q add_list "dhcp.$sec.confdir=/etc/dnsmasq.d" 2>/dev/null || true
+if [ "$BALANCER_ENABLED" = 1 ]; then
+    uci set "dhcp.$sec.allservers=1" || return 1
+    uci set "dhcp.$sec.strictorder=0" || return 1
+else
+    uci set "dhcp.$sec.allservers=0" 2>/dev/null || true
+fi
+uci set "dhcp.$sec.noresolv=1" || return 1
+uci commit dhcp || return 1
+return 0
+}
+verify_dnsmasq_port53() {
+if command -v ss >/dev/null 2>&1; then
+    _l53="$(ss -lntup 2>/dev/null | awk '/[:.]53([[:space:]]|$)/{print}')"
+elif command -v netstat >/dev/null 2>&1; then
+    _l53="$(netstat -lntup 2>/dev/null | awk '/[:.]53([[:space:]]|$)/{print}')"
+else
+    warn_msg "Не удалось проверить владельца порта 53: нет ss и netstat."
+    return 0
+fi
+[ -n "$_l53" ] || { err_msg "На порту 53 никто не слушает после запуска dnsmasq."; return 1; }
+if printf '%s\n' "$_l53" | grep -vi 'dnsmasq' | grep -q .; then
+    err_msg "Порт 53 занят не только dnsmasq. Локальный DNS конфликтует с новой схемой."
+    printf '%s\n' "$_l53"
+    return 1
+fi
+return 0
+}
+ensure_dnsmasq_frontend() {
+sec="$(get_dnsmasq_section)"
+uci -q get "dhcp.$sec" >/dev/null 2>&1 || return 1
+/etc/init.d/dnsmasq stop >/dev/null 2>&1 || true
+uci set "dhcp.$sec.port=53" 2>/dev/null || true
+uci set "dhcp.$sec.enabled=1" 2>/dev/null || true
+uci commit dhcp || return 1
+/etc/init.d/dnsmasq enable >/dev/null 2>&1 || true
+/etc/init.d/dnsmasq start >/dev/null 2>&1 || /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
+sleep 1
+verify_dnsmasq_port53 || return 1
+return 0
+}
+
 apply_settings() {
 clear_screen
 
@@ -1382,6 +1533,12 @@ for _s in 1 2 3 4 5 6; do eval "_v=\${SLOT_$_s}"; [ -n "$_v" ] && printf "  Сл
 [ -n "$SLOT_RU" ] && printf "  RU: %s\n" "$(dns_name "$SLOT_RU")"
 fi
 printf "\n${C_WHITE}Дополнительные изменения:${C_NC}\n"
+if [ "$AUTO_DNS_ONLY" = 1 ]; then
+printf "  ${C_CYAN}ℹ Автоматический режим меняет только DNS/DoH, dnsmasq и NTP. QUIC, MTU, sysctl, Go/Tailscale/TG WS и принудительный DNS не изменяются.${C_NC}\n"
+fi
+BALANCER_ENABLED=1
+NTP_IP_FALLBACK=1
+if [ "$DNS_PROFILE" = hybrid ]; then TLD_RU_ENABLED=1; TLD_SPLIT=1; fi
 [ "$TLD_RU_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Раздельный DNS .ru/.su/.рф\n" || printf "  ${C_YELLOW}—${C_NC} Раздельный DNS не выбран\n"
 [ "$BALANCER_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Параллельный опрос DoH (allservers=1)\n" || printf "  ${C_YELLOW}—${C_NC} Параллельный режим не выбран\n"
 [ "$NTP_IP_FALLBACK" = 1 ] && printf "  ${C_GREEN}✓${C_NC} NTP по IP без зависимости от DNS\n" || printf "  ${C_YELLOW}—${C_NC} NTP не изменяется\n"
@@ -1390,67 +1547,78 @@ printf "\n${C_WHITE}Дополнительные изменения:${C_NC}\n"
 [ "$SYSCTL_TUNING" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация sysctl\n" || printf "  ${C_YELLOW}—${C_NC} sysctl не изменяется\n"
 [ "$GO_OPTIMIZE" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация Go / Tailscale / TG WS\n" || printf "  ${C_YELLOW}—${C_NC} Go/Tailscale/TG WS не изменяется\n"
 printf "\n${C_WHITE}Текущее состояние до применения:${C_NC}\n"
+for _svc in smartdns unbound adguardhome mosdns sing-box; do
+    if [ -x "/etc/init.d/$_svc" ] && service_owns_dns53 "$_svc"; then
+        printf "  ${C_PINK}↻ $_svc занимает 53: будет отключён для освобождения локального DNS.${C_NC}\n"
+    fi
+done
 printf "  dnsmasq: %b\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  DoH: %s (наших %s / чужих %s / неизвестных %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
 if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
-printf "  ${C_YELLOW}⚠ Обнаружены чужие или неизвестные DoH. Они не будут изменены.${C_NC}\n"
-printf "  ${C_YELLOW}   Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
+printf "  ${C_YELLOW}⚠ Обнаружены существующие экземпляры DoH.${C_NC}\n"
+printf "  ${C_PINK}↻ После подтверждения текущие экземпляры будут заменены выбранной конфигурацией DNS Manager.${C_NC}\n"
 fi
-printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
+printf "\n${C_PINK}После подтверждения текущий DNS-слой будет заменён выбранной схемой.${C_NC}\n"
+printf "${C_YELLOW}Это касается DoH и upstream DNS dnsmasq. Zapret, VPN, прокси и прочие сервисы не настраиваются автоматическим DNS-профилем.${C_NC}\n"
 printf "${C_YELLOW}ℹ Если желаемый порт занят чужим сервисом, слот уедет на ближайший свободный — итог будет показан после применения.${C_NC}\n"
 confirm_action "Применить показанную выше конфигурацию?" || return
 TX_ID="$(date +%Y%m%d-%H%M%S)-$$"
 TX_RESERVED_PORTS=""
 tx_snapshot_start || { err_msg "Не удалось создать снимок транзакции. Изменения не выполняются."; return 1; }
 log_tx "PLAN" "all" "APPLY" "START" "version=$VERSION"
-
+snapshot_conflicting_dns || { err_msg "Не удалось сохранить состояние локальных DNS-служб."; tx_restore_on_failure; return 1; }
 if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = hybrid ]; then
-/etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
-sleep 3
+    /etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
+    sleep 2
 fi
+stop_conflicting_dns
 disc_listeners
 disc_dns
-hybrid_reconcile_existing || { err_msg "Не удалось согласовать существующие DoH."; tx_restore_on_failure; return 1; }
+replace_all_doh_instances || { err_msg "Не удалось удалить старые экземпляры DoH."; tx_restore_on_failure; return 1; }
 disc_listeners
 disc_dns
-repair_duplicate_own_doh_ports
-if [ "$DNS_PROFILE" = hybrid ]; then
 TX_RESERVED_PORTS=""
-for s in 1 2 3 4 5 6; do
-eval "v=\${SLOT_$s}"
-ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить Hybrid-слот $s."; tx_restore_on_failure; return 1; }
-done
-ensure_doh_slot RU "$SLOT_RU" || { err_msg "Не удалось подготовить RU-слот 5059."; tx_restore_on_failure; return 1; }
+if [ "$DNS_PROFILE" = hybrid ]; then
+    for s in 1 2 3 4 5 6; do
+        eval "v=\${SLOT_$s}"
+        [ -n "$v" ] || continue
+        ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить Hybrid-слот $s."; tx_restore_on_failure; return 1; }
+    done
+    if [ -n "$SLOT_RU" ]; then
+        ensure_doh_slot RU "$SLOT_RU" || { err_msg "Не удалось подготовить RU-слот 5059."; tx_restore_on_failure; return 1; }
+    fi
 else
-for s in 1 2 3 4 5 6; do
-eval "v=\${SLOT_$s}"
-ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; tx_restore_on_failure; return 1; }
-done
-ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
-ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
+    for s in 1 2 3 4 5 6; do
+        eval "v=\${SLOT_$s}"
+        [ -n "$v" ] || continue
+        ensure_doh_slot "$s" "$v" || { err_msg "Не удалось подготовить слот $s."; tx_restore_on_failure; return 1; }
+    done
+    if [ -n "$SLOT_RU" ]; then
+        ensure_doh_slot RU "$SLOT_RU" || { tx_restore_on_failure; return 1; }
+    fi
+    if [ -n "$SLOT_RU_2" ]; then
+        ensure_doh_slot RU_2 "$SLOT_RU_2" || { tx_restore_on_failure; return 1; }
+    fi
 fi
-reconcile_selected_doh_fields || { err_msg "Не удалось обновить выбранные DoH-секции."; tx_restore_on_failure; return 1; }
-remove_stale_own_doh || { err_msg "Не удалось удалить устаревшие собственные DoH-секции."; tx_restore_on_failure; return 1; }
-# Проверка плана перед сохранением.
 plan_dup="$(for s in 1 2 3 4 5 6 RU RU_2; do eval "p=\${PORT_$s}"; [ -n "$p" ] && printf '%s\n' "$p"; done | sort | uniq -d | head -n1)"
 if [ -n "$plan_dup" ]; then
 err_msg "План отменён: порт $plan_dup назначен нескольким DNS одновременно."; tx_restore_on_failure; return 1
 fi
 uci commit https-dns-proxy 2>/dev/null || { err_msg "Не удалось сохранить конфигурацию DoH. Проверьте права доступа к /etc/config/https-dns-proxy и убедитесь, что файл не поврежден."; tx_restore_on_failure; return 1; }
-reconcile_dnsmasq || { err_msg "Не удалось настроить dnsmasq."; tx_restore_on_failure; return 1; }
-if [ "$FORCE_DOH" = 1 ]; then apply_dns_force || { err_msg "Не удалось применить принудительный DNS."; tx_restore_on_failure; return 1; }; fi
+ensure_dnsmasq_frontend || { err_msg "Не удалось подготовить dnsmasq на порту 53."; tx_restore_on_failure; return 1; }
+replace_dnsmasq_servers || { err_msg "Не удалось заменить старые DNS-upstream dnsmasq."; tx_restore_on_failure; return 1; }
+if [ "$AUTO_DNS_ONLY" != 1 ] && [ "$FORCE_DOH" = 1 ]; then apply_dns_force || { err_msg "Не удалось применить принудительный DNS."; tx_restore_on_failure; return 1; }; fi
 if [ "$NTP_IP_FALLBACK" = 1 ]; then
 apply_ntp_if_needed || { err_msg "Не удалось настроить NTP по IP."; tx_restore_on_failure; return 1; }
 fi
-if [ "$BLOCK_QUIC" = 1 ]; then apply_quic || { err_msg "Не удалось применить блокировку QUIC."; tx_restore_on_failure; return 1; }; fi
-if [ "$MTU_FIX" = 1 ]; then uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; fi
-if [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl || { err_msg "Не удалось применить sysctl."; tx_restore_on_failure; return 1; }; fi
-if [ "$GO_OPTIMIZE" = 1 ]; then apply_go || { err_msg "Не удалось применить оптимизацию Go."; tx_restore_on_failure; return 1; }; fi
+if [ "$AUTO_DNS_ONLY" != 1 ] && [ "$BLOCK_QUIC" = 1 ]; then apply_quic || { err_msg "Не удалось применить блокировку QUIC."; tx_restore_on_failure; return 1; }; fi
+if [ "$AUTO_DNS_ONLY" != 1 ] && [ "$MTU_FIX" = 1 ]; then uci -q set firewall.@defaults[0].mtu_fix=1; uci commit firewall; fi
+if [ "$AUTO_DNS_ONLY" != 1 ] && [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl || { err_msg "Не удалось применить sysctl."; tx_restore_on_failure; return 1; }; fi
+if [ "$AUTO_DNS_ONLY" != 1 ] && [ "$GO_OPTIMIZE" = 1 ]; then apply_go || { err_msg "Не удалось применить оптимизацию Go."; tx_restore_on_failure; return 1; }; fi
 
 
 tx_snapshot_after_apply
 sleep 1
-# сбрасываем staging UCI, иначе добавленные секции переживут cp-восстановление
 uci revert https-dns-proxy 2>/dev/null
 uci revert dhcp 2>/dev/null
 uci revert firewall 2>/dev/null
@@ -1717,65 +1885,58 @@ done
 auto_fill_slots() {
 _cat="$1"
 if [ ! -s "$TEST_RESULTS" ]; then
-info_msg "Тест DNS ещё не запускался. Запускаю тест..."
-test_dns_catalog
+    info_msg "Тест DNS ещё не запускался. Запускаю тест..."
+    test_dns_catalog
 fi
 [ -s "$TEST_RESULTS" ] || { warn_msg "Не удалось получить результаты теста."; pause; return 1; }
-_pool="$TMP_DIR/auto-slots"
-: > "$_pool"
-
-_src="$TMP_DIR/auto-candidates"
-: > "$_src"
+_pool="$TMP_DIR/auto-slots"; _src="$TMP_DIR/auto-candidates"; _seen_urls="$TMP_DIR/auto-seen-urls"
+: > "$_pool"; : > "$_src"; : > "$_seen_urls"
 if [ "$_cat" = all ]; then
-awk -F'|' '$5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
+    awk -F'|' '$5=="OK" && $2!="regional"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
 else
-awk -F'|' -v c="$_cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
+    awk -F'|' -v c="$_cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
 fi
 [ -s "$_src" ] || { warn_msg "Нет успешно проверенных DNS в выбранной категории."; pause; return 1; }
-_seen_urls="$TMP_DIR/auto-seen-urls"
-: > "$_seen_urls"
-i=1
-while IFS='|' read -r _id _cat2 _name _ms _st; do
-[ -n "$_id" ] || continue
-_url="$(dns_url "$_id")"
-grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
-printf '%s\n' "$_url" >> "$_seen_urls"
-printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
-i=$((i+1))
-[ "$i" -gt 9 ] && break
-done < "$_src"
-[ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
-# For 'all', keep at most one fastest result per category first, then fill remaining slots by speed.
 if [ "$_cat" = all ]; then
-_div="$TMP_DIR/auto-diverse"
-: > "$_div"
-for _c in bypass clean security privacy adblock family social regional; do
-awk -F'|' -v c="$_c" '$2==c{print}' "$_src" | head -n1 >> "$_div"
-done
-cat "$_div" 2>/dev/null > "$_src2"
-cat "$_src" 2>/dev/null >> "$_src2"
-: > "$_pool"
-_seen_urls="$TMP_DIR/auto-seen-urls"; : > "$_seen_urls"
-while IFS='|' read -r _id _cat2 _name _ms _st; do
-[ -n "$_id" ] || continue
-_url="$(dns_url "$_id")"
-grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
-printf '%s\n' "$_url" >> "$_seen_urls"
-printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
-[ "$(wc -l < "$_pool" | tr -d ' ')" -ge 8 ] && break
-done < "$_src2"
+    _div="$TMP_DIR/auto-diverse"; : > "$_div"
+    for _c in bypass clean security privacy adblock family social; do
+        awk -F'|' -v c="$_c" '$2==c{print}' "$_src" | head -n1 >> "$_div"
+    done
+    cat "$_div" 2>/dev/null > "$TMP_DIR/auto-source"
+    cat "$_src" 2>/dev/null >> "$TMP_DIR/auto-source"
+    mv "$TMP_DIR/auto-source" "$_src"
 fi
 i=1
 while IFS='|' read -r _id _cat2 _name _ms _st; do
-[ -n "$_id" ] || continue
-case "$i" in
-1|2|3|4|5|6) eval "SLOT_$i=\"$_id\"";;
-7) SLOT_RU="$_id";;
-8) SLOT_RU_2="$_id";;
-esac
-i=$((i+1))
-[ "$i" -gt 8 ] && break
+    [ -n "$_id" ] || continue
+    _url="$(dns_url "$_id")"
+    grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
+    printf '%s\n' "$_url" >> "$_seen_urls"
+    printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
+    i=$((i+1)); [ "$i" -gt 6 ] && break
+done < "$_src"
+[ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
+i=1
+while IFS='|' read -r _id _cat2 _name _ms _st; do
+    [ -n "$_id" ] || continue
+    eval "SLOT_$i=\"$_id\""
+    i=$((i+1)); [ "$i" -gt 6 ] && break
 done < "$_pool"
+# RU-сегмент всегда выбирается отдельно: только regional, с приоритетом Yandex.
+if awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{found=1; exit} END{exit found?0:1}' "$TEST_RESULTS" 2>/dev/null; then
+    SLOT_RU="yandex_ru"
+    SLOT_RU_2="$(awk -F'|' '$2=="regional" && $5=="OK" && $1!="yandex_ru"{print $1; exit}' "$TEST_RESULTS" 2>/dev/null)"
+elif [ "$_cat" = regional ]; then
+    _ru1="$(awk -F'|' '$2=="regional" && $5=="OK"{print $1; exit}' "$TEST_RESULTS" 2>/dev/null)"
+    if [ -n "$_ru1" ]; then
+        SLOT_RU="$_ru1"
+        SLOT_RU_2="$(awk -F'|' -v skip="$_ru1" '$2=="regional" && $5=="OK" && $1!=skip{print $1; exit}' "$TEST_RESULTS" 2>/dev/null)"
+    else
+        warn_msg "Нет проверенных региональных DNS — RU-сегмент оставлен как был."
+    fi
+else
+    warn_msg "Yandex RU не прошёл проверку — RU-сегмент оставлен как был."
+fi
 save_config
 printf "${C_GREEN}✓ Автоматически выбран набор DNS без дублей.${C_NC}\n"
 for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
@@ -1783,6 +1944,7 @@ for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WH
 [ -n "$SLOT_RU_2" ] && printf "  ${C_WHITE}RU2: %s${C_NC}\n" "$(dns_name "$SLOT_RU_2")"
 return 0
 }
+
 menu_best_actions() {
 goal="$1"; title="$2"
 while :; do
@@ -1798,7 +1960,9 @@ safe_read a
 case "$a" in
 1)
 if auto_fill_slots "$goal"; then
-apply_settings
+    AUTO_DNS_ONLY=1
+    apply_settings
+    AUTO_DNS_ONLY=0
 fi
 ;;
 2)
@@ -2100,7 +2264,6 @@ menu_extras() {
 ensure_dependencies(){
 missing=""
 [ "$HAS_CURL" = yes ] || missing="$missing curl"
-# Исправлено: для apk пакет называется bind-tools, для opkg - bind-dig
 if [ "$PKG_MGR" = "apk" ]; then
 [ "$HAS_DIG" = yes ] || missing="$missing bind-tools"
 else
@@ -2197,7 +2360,8 @@ else if (phase=="TEST") phase="Тест";
 else if (phase=="PLAN") phase="План";
 else if (phase=="APPLY") phase="Применение";
 else if (phase=="VERIFY") phase="Проверка";
-if (res=="OK") res="успешно"; else if (res=="FAIL") res="ошибка";
+if (res=="OK") res="успешно";
+else if (res=="FAIL") res="ошибка";
 printf "  %s: %s → %s → %s\n", phase,obj,act,res;
 }'
 else
@@ -2234,7 +2398,9 @@ PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
 PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
 PORT_RU="$HYBRID_PORT_RU"; PORT_RU_2=""
 save_config
+AUTO_DNS_ONLY=1
 apply_settings
+AUTO_DNS_ONLY=0
 }
 dependency_preflight(){
 run_discovery >/dev/null 2>&1 || true
