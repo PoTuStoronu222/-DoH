@@ -1952,17 +1952,15 @@ printf "${C_SECTION}МОДУЛИ DNS MANAGER${C_NC}\n"
 printf "  Профиль:                    ${C_YELLOW}%s${C_NC}\n" "$( [ "$DNS_PROFILE" = hybrid ] && printf '%s' 'Hybrid SmartDNS — 6 DoH + Yandex RU' || printf '%s' 'Пользовательский' )"
 printf "  Балансировка DNS:           %s\n" "$(config_state_word "$BALANCER_ENABLED")"
 printf "  Раздельный DNS (.ru/.su/.рф): %s\n" "$(config_state_word "$TLD_SPLIT")"
-printf "  Блокировка QUIC:            %s\n" "$(module_state_word quic "$BLOCK_QUIC")"
-printf "  Исправление MTU:             %s\n" "$(module_state_word mtu "$MTU_FIX")"
-printf "  Резерв времени по IP:       %s\n" "$(config_state_word "$NTP_IP_FALLBACK")"
-printf "  Оптимизация ядра:            %s\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-printf "  Go / Tailscale / TG WS:     %s\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "  Блокировка QUIC (DPI):      %s\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "  Исправление MTU / MSS:      %s\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "  Перехват всего DNS:         %s\n" "$(module_state_word force "$FORCE_DOH")"
+printf "  Оптимизация Sysctl/NAT:     %s\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "  Тюнинг dnsmasq:             %s\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "  Оптимизация Go-приложений:  %s\n" "$(module_state_word go "$GO_OPTIMIZE")"
 printf "  NTP для клиентов:           %s\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-printf "  Производительность dnsmasq: %s\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-printf "  Клиентские DNS-фиксы:       %s\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
-printf "  Расширенный sysctl:         %s\n" "$(module_state_word sysctl_ext "$SYSCTL_EXTENDED")"
-printf "  Автоматический запуск Tailscale: %s\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-printf "  Чистка cron:                %s\n" "$(module_state_word cron "$CRON_CLEANUP")"
+printf "  Авто-перезапуск Tailscale:  %s\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+printf "  Фиксы телеметрии/связи:     %s\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
 printf "${C_GREEN}✓ Discovery завершён. Изменений в конфигурацию не внесено.${C_NC}\n"
 pause
 }
@@ -2389,44 +2387,66 @@ menu_extras() {
 while :; do
 clear_screen
 printf "${C_WHITE}╔══════════════════════════════════════════════╗\n"
-printf "║           🔧 Дополнительные настройки         ║\n"
-printf "╚══════════════════════════════════════════════╝${C_NC}\n\n"
-printf "${C_SECTION}ОСНОВА DNS${C_NC}\n"
-printf "  ${C_GREEN}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(module_state_word balance "$BALANCER_ENABLED")"
-printf "  ${C_GREEN}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(module_state_word tld "$TLD_RU_ENABLED")"
-printf "  ${C_GREEN}[3]${C_NC} NTP IP-first: %b\n" "$(module_state_word ntp "$NTP_IP_FALLBACK")"
-printf "\n${C_SECTION}ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
-printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(module_state_word mtu "$MTU_FIX")"
-printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
-printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(module_state_word force "$FORCE_DOH")"
-printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
-printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(module_state_word sysctl_ext "$SYSCTL_EXTENDED")"
-printf "  ${C_YELLOW}[13]${C_NC} Автоматический запуск Tailscale после NTP: %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(module_state_word cron "$CRON_CLEANUP")"
-printf "  ${C_YELLOW}[15]${C_NC} IP-заглушки\n"
-printf "\n${C_CYAN}Переключатели применяются сразу и не перезаписывают DNS-ядро.${C_NC}\n"
-printf "${C_CYAN}Пункт 14 в главном меню — только для слотов, профилей и bootstrap.${C_NC}\n"
-printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
+printf "║      🔧 Дополнительные модули и фиксы        ║\n"
+printf "╚══════════════════════════════════════════════╝${C_NC}\n"
+
+printf "${C_SECTION}🛡 ОБХОД DPI И СЕТЕВЫЕ ФИКСЫ${C_NC}\n"
+printf "  ${C_YELLOW}[1]${C_NC} Блокировка QUIC (UDP 80/443): %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "      ${C_CYAN}↳ Принудительно переводит HTTP/3 в TCP/TLS, помогает обходить DPI${C_NC}\n"
+printf "  ${C_YELLOW}[2]${C_NC} Исправление MTU / MSS: %b\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "      ${C_CYAN}↳ Предотвращает обрывы VPN, WireGuard, Tailscale и Yandex${C_NC}\n"
+printf "  ${C_YELLOW}[3]${C_NC} Перехват всего DNS (Force DNS): %b\n" "$(module_state_word force "$FORCE_DOH")"
+printf "      ${C_CYAN}↳ Блокирует DoT и перенаправляет весь DNS LAN на роутер${C_NC}\n"
+
+printf "\n${C_SECTION}⚡ ОПТИМИЗАЦИЯ ЯДРА И ПРОИЗВОДИТЕЛЬНОСТИ${C_NC}\n"
+printf "  ${C_YELLOW}[4]${C_NC} Оптимизация Sysctl и Conntrack: %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "      ${C_CYAN}↳ Ускоряет NAT, снижает таймауты, увеличивает таблицу conntrack${C_NC}\n"
+printf "  ${C_YELLOW}[5]${C_NC} Тюнинг dnsmasq (кэш и скорость): %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "      ${C_CYAN}↳ Увеличивает кэш, лимиты и отключает лишние проверки${C_NC}\n"
+printf "  ${C_YELLOW}[6]${C_NC} Оптимизация Go-приложений: %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "      ${C_CYAN}↳ Ограничивает память для Tailscale и TG-прокси (GOMEMLIMIT)${C_NC}\n"
+
+printf "\n${C_SECTION}📱 КЛИЕНТЫ, NTP И СЕРВИСЫ${C_NC}\n"
+printf "  ${C_YELLOW}[7]${C_NC} NTP-сервер для клиентов LAN: %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+printf "      ${C_CYAN}↳ Роутер раздает себя как NTP-сервер (DHCP opt 42 + DNAT)${C_NC}\n"
+printf "  ${C_YELLOW}[8]${C_NC} Авто-перезапуск Tailscale (WAN up): %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+printf "      ${C_CYAN}↳ Добавляет hotplug-скрипт. При выключении — удаляет его${C_NC}\n"
+printf "  ${C_YELLOW}[9]${C_NC} Фиксы телеметрии и связи (ОС): %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+printf "      ${C_CYAN}↳ Блокирует телеметрию, чинит проверки сети в Android/Windows${C_NC}\n"
+
+printf "\n${C_SECTION}🧹 ОЧИСТКА И ПРОЧЕЕ${C_NC}\n"
+printf "  ${C_YELLOW}[10]${C_NC} Очистка устаревших cron-заданий\n"
+printf "      ${C_CYAN}↳ Удаляет старые cron-скрипты перезапуска DNS Manager (разовое)${C_NC}\n"
+printf "  ${C_YELLOW}[11]${C_NC} IP-заглушки (bogus-nxdomain)\n"
+printf "      ${C_CYAN}↳ Ручной выбор IP-адресов провайдерских заглушек${C_NC}\n"
+
+printf "\n${C_CYAN}Переключатели применяются сразу и не затрагивают ядро DNS-профиля.${C_NC}\n"
+printf "  ${C_GREEN}[Enter]${C_NC} Назад\n"
+printf "${C_YELLOW}Выбор:${C_NC} "; safe_read c
 case "$c" in
-1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; apply_extras_now balance; pause;;
-2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; apply_extras_now tld; pause;;
-3) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1; apply_extras_now ntp; pause;;
-4) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
-5) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
-6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1; apply_extras_now sysctl; pause;;
-7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
-8) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
-9) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
-10) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
-11) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
-12) [ "$SYSCTL_EXTENDED" = 1 ] && SYSCTL_EXTENDED=0 || SYSCTL_EXTENDED=1; apply_extras_now sysctl_ext; pause;;
-13) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
-14) [ "$CRON_CLEANUP" = 1 ] && CRON_CLEANUP=0 || CRON_CLEANUP=1; apply_extras_now cron; pause;;
-15) menu_bogus;;
+1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
+2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
+3) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
+4)
+   if [ "$SYSCTL_TUNING" = 1 ]; then
+       SYSCTL_TUNING=0; SYSCTL_EXTENDED=0
+   else
+       SYSCTL_TUNING=1; SYSCTL_EXTENDED=1
+   fi
+   apply_extras_now sysctl
+   apply_extras_now sysctl_ext
+   pause;;
+5) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
+6) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
+7) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
+8) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
+9) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
+10)
+   cleanup_manager_cron
+   CRON_CLEANUP=1
+   save_config
+   pause;;
+11) menu_bogus;;
 '') return;;
 *) warn_msg "Неизвестный пункт."; pause;;
 esac
