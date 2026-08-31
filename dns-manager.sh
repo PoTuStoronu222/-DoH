@@ -989,22 +989,22 @@ apply_quic() {
         return 0
     fi
     uci add firewall rule >/dev/null 2>&1 || return 1
-    uci set firewall.@rule[-1].name='DnsMgr_QUIC_80' || return 1
+    uci set firewall.@rule[-1].name='Block_UDP_80' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
     uci set firewall.@rule[-1].dest_port='80' || return 1
     uci set firewall.@rule[-1].target='REJECT' || return 1
     uci add firewall rule >/dev/null 2>&1 || return 1
-    uci set firewall.@rule[-1].name='DnsMgr_QUIC_443' || return 1
+    uci set firewall.@rule[-1].name='Block_UDP_443' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
     uci set firewall.@rule[-1].dest_port='443' || return 1
     uci set firewall.@rule[-1].target='REJECT' || return 1
     uci commit firewall || return 1
-    record_own "firewall" "name" "DnsMgr_QUIC_80" "created"
-    record_own "firewall" "name" "DnsMgr_QUIC_443" "created"
+    record_own "firewall" "name" "Block_UDP_80" "created"
+    record_own "firewall" "name" "Block_UDP_443" "created"
 }
 
 apply_sysctl() {
@@ -1665,7 +1665,7 @@ if [ -s "$PREV_DNSMASQ" ]; then
     uci commit dhcp 2>/dev/null
     rm -f "$PREV_DNSMASQ" 2>/dev/null
 fi
-for r in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
+for r in Block_UDP_80 Block_UDP_443; do
 while :; do idx="$(uci show firewall 2>/dev/null | grep "name='$r'" | head -n1 | cut -d. -f2 | cut -d= -f1)"; [ -n "$idx" ] || break; uci -q delete "firewall.$idx"; done
 done
 uci commit firewall 2>/dev/null
@@ -2131,7 +2131,7 @@ save_config
 }
 apply_quic_toggle() {
     if [ "$BLOCK_QUIC" != 1 ]; then
-        for _rname in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
+        for _rname in Block_UDP_80 Block_UDP_443; do
             while :; do
                 _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
                 [ -n "$_ridx" ] || break
