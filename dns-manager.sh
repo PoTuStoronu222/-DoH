@@ -92,114 +92,130 @@ cat > "$DNS_CATALOG" <<'EOF_DNS'
 #! Список кандидатов. Работоспособность проверяется с роутера.
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 
-# --- Обход ограничений / сервисы ---
-astracat|bypass|geo+ads+services|AstraCat DNS|https://dns.astracat.ru/dns-query|ru/global|runtime-check
-astracat_1498|bypass|geo+ads+services|AstraCat DNS :1498|https://dns.astracat.ru:1498/dns-query|ru/global|runtime-check
-astracat_8443|bypass|geo+ads+services|AstraCat DNS :8443|https://dns.astracat.ru:8443/dns-query|ru/global|runtime-check
-bebas_unfiltered|bypass|uncensored|BebasDNS Unfiltered|https://dns.bebasid.com/unfiltered|id/global|source-listed
-comss_one_ads|bypass|geo+ads+security|Comss.one Ad Filter|https://router.comss.one/dns-query|ru/global|source-listed
-comss_one|bypass|geo+ai+services|Comss.one DNS|https://dns.comss.one/dns-query|ru/global|source-listed
-comss_one_dns|bypass|обход+сервисы|Comss.one DNS|https://dns.comss.one/dns-query](https://dns.comss.one/dns-query|global|runtime-check
-dns4all|bypass|uncensored|DNS4all|https://doh.dns4all.eu/dns-query|eu/global|source-listed
-dns4eu_unfiltered|bypass|uncensored|DNS4EU Unfiltered|https://unfiltered.joindns4.eu/dns-query|eu|source-listed
-geohide_444|bypass|geo+services|GeoHide DNS :444|https://dns.geohide.ru:444/dns-query|ru/global|runtime-check
+# --- Обход блокировок / региональных ограничений / сервисы ---
+mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
+mafioznik_xyz|bypass|geo+ai+services|Mafioznik DNS XYZ|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
+astracat|bypass|geo+ads+services|Astrakat DNS|https://dns.astrakat.ru/dns-query|ru/global|user-confirmed-current
+astracat_1498|bypass|geo+ads+services|AstraCat DNS :1498|https://dns.astrakat.ru:1498/dns-query|ru/global|runtime-check
+astracat_8443|bypass|geo+ads+services|AstraCat DNS :8443|https://dns.astrakat.ru:8443/dns-query|ru/global|runtime-check
+malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|verified-current
+xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|verified-current
+nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
+geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
 geohide_8443|bypass|geo+services|GeoHide DNS :8443|https://dns.geohide.ru:8443/dns-query|ru/global|runtime-check
-mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
-malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|runtime-check
-nullsproxy|bypass|games+services|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|runtime-check
+comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
+comss_bypass|bypass|geo+ai+security|Comss.one|https://dns.comss.one/dns-query|ru/global|verified-published-current
+comss_adblock_bypass|bypass|geo+ads+security|Comss.one Ad Filter|https://router.comss.one/dns-query|ru/global|verified-published-current
+vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|user-confirmed-current
+dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
+paesa|bypass|geo+youtube|Paesa DNS|https://dns.paesa.es/dns-query|global|review-runtime
+anon_no|bypass|privacy+geo|Anon.no DNS|https://dns.anon.no/dns-query|norway|review-runtime
+bebas_unfiltered|bypass|uncensored|BebasDNS Unfiltered|https://dns.bebasid.com/unfiltered|id/global|source-listed
+dns4all|bypass|uncensored|DNS4all|https://doh.dns4all.eu/dns-query|eu/global|source-listed
+dns4eu_unfiltered|clean|unfiltered|DNS4EU Unfiltered|https://unfiltered.joindns4.eu/dns-query|eu|verified-published-current
 shecan|bypass|geo+services|Shecan DNS|https://free.shecan.ir/dns-query|ir/global|runtime-check
-vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|runtime-check
-xbox_dns|bypass|games+services|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|runtime-check
 
 # --- Региональные DNS ---
-yandex_ru|regional|ru+su+rf|Yandex DNS|https://common.dot.dns.yandex.net/dns-query|ru|source-listed
-yandex_dns|regional|ru+su+rf|Yandex DNS|https://safe.dot.dns.yandex.net/dns-query|global|runtime-check
-yandex_dns|regional|ru+su+rf|Yandex DNS|https://family.dot.dns.yandex.net/dns-query|global|runtime-check
+yandex_ru|regional|ru+su+rf|Yandex RU|https://common.dot.dns.yandex.net/dns-query|ru|verified-published-current
+yandex_safe|regional|ru+su+rf|Yandex Safe|https://safe.dot.dns.yandex.net/dns-query|ru|runtime-check
+yandex_family|regional|ru+su+rf|Yandex Family|https://family.dot.dns.yandex.net/dns-query|ru|runtime-check
 
-# --- Чистые и резервные ---
-18bit_cn|clean|без-фильтрации|18bit.cn|https://doh.18bit.cn/dns-query|global|runtime-check
+# --- Чистые и публичные (Clean / Unfiltered) ---
+cloudflare_clean|clean|unfiltered|Cloudflare|https://cloudflare-dns.com/dns-query|global|verified-published-current
+google_clean|clean|unfiltered|Google Public DNS|https://dns.google/dns-query|global|verified-published-current
+quad9_unfiltered|clean|unfiltered+dnssec|Quad9 Unsecured|https://dns10.quad9.net/dns-query|global|verified-published-current
+adguard_unfiltered|clean|unfiltered|AdGuard Unfiltered|https://unfiltered.adguard-dns.com/dns-query|global|verified-published-current
+controld_p0|clean|unfiltered|Control D Unfiltered|https://freedns.controld.com/p0|global|verified-published-current
+controld_uncensored|clean|uncensored|Control D Uncensored|https://freedns.controld.com/uncensored|global|verified-published-current
+he_public|clean|unfiltered+anycast|Hurricane Electric Public Recursor|https://ordns.he.net/dns-query|global|verified-published-current
+18bit_cn|clean|unfiltered|18bit.cn|https://doh.18bit.cn/dns-query|asia|source-listed
 aa_dns|clean|unfiltered|Andrews & Arnold|https://dns.aa.net.uk/dns-query|uk/eu|source-listed
 aquilenet|clean|unfiltered+dnssec|Aquilenet DNS|https://dns.aquilenet.fr/dns-query|fr/eu|source-listed
-aquilenet_fr_dns_query_https_dns_aquilenet_fr_dns_|clean|без-фильтрации|aquilenet.fr/dns-query](https://dns.aquilenet.fr/dns-query|https://dns.aquilenet.fr/dns-query](https://dns.aquilenet.fr/dns-query|eu|runtime-check
 belnet|clean|unfiltered|Belnet DNS|https://dns.belnet.be/dns-query|be/eu|source-listed
-belnet_be_dns_query_https_dns_belnet_be_dns_query|clean|без-фильтрации|belnet.be/dns-query](https://dns.belnet.be/dns-query|https://dns.belnet.be/dns-query](https://dns.belnet.be/dns-query|global|runtime-check
-blokada|clean|privacy|Blokada DNS|https://dns.blokada.org/dns-query|global|source-listed
 cynthia|clean|unfiltered|CynthiaLabs DNS|https://dns.cynthialabs.net/dns-query|global|source-listed
-cynthialabs_net_dns_query_https_dns_cynthialabs_ne|clean|без-фильтрации|cynthialabs.net/dns-query](https://dns.cynthialabs.net/dns-query|https://dns.cynthialabs.net/dns-query](https://dns.cynthialabs.net/dns-query|global|runtime-check
 digitalsize|clean|unfiltered+privacy|DigitalSize DNS|https://dns.digitalsize.net/dns-query|de/eu|source-listed
-digitalsize_net_dns_query_https_dns_digitalsize_ne|clean|без-фильтрации|digitalsize.net/dns-query](https://dns.digitalsize.net/dns-query|https://dns.digitalsize.net/dns-query](https://dns.digitalsize.net/dns-query|global|runtime-check
 doh_disconnect|clean|unfiltered|Disconnect DNS|https://doh.disconnect.app/dns-query|global|source-listed
-disconnect_app_dns_query_https_doh_disconnect_app_|clean|без-фильтрации|disconnect.app/dns-query](https://doh.disconnect.app/dns-query|https://doh.disconnect.app/dns-query](https://doh.disconnect.app/dns-query|global|runtime-check
 dnshome|clean|unfiltered|DNSHome|https://dns.dnshome.de/dns-query|de/eu|source-listed
-dnshome_de_dns_query_https_dns_dnshome_de_dns_quer|clean|без-фильтрации|dnshome.de/dns-query](https://dns.dnshome.de/dns-query|https://dns.dnshome.de/dns-query](https://dns.dnshome.de/dns-query|eu|runtime-check
+one_dns_pure|clean|unfiltered|OneDNS Pure|https://doh-pure.onedns.net/dns-query|asia|verified-published-current
 dns_pub|clean|unfiltered|DNSPod Public DNS|https://dns.pub/dns-query|cn/global|source-listed
 dns_fdn0|clean|unfiltered|FDN DNS 0|https://ns0.fdn.fr/dns-query|fr/eu|source-listed
 dns_fdn1|clean|unfiltered|FDN DNS 1|https://ns1.fdn.fr/dns-query|fr/eu|source-listed
-ffmuc|clean|без-фильтрации|FFMUC|https://doh.ffmuc.net/dns-query](https://doh.ffmuc.net/dns-query|global|runtime-check
-hostux|clean|без-фильтрации|Hostux|https://dns.hostux.net/dns-query](https://dns.hostux.net/dns-query|global|runtime-check
 doh_lacontrevoie|clean|unfiltered|LaContreVoie DNS|https://doh.lacontrevoie.fr/dns-query|fr/eu|source-listed
-lacontrevoie_fr_dns_query_https_doh_lacontrevoie_f|clean|без-фильтрации|lacontrevoie.fr/dns-query](https://doh.lacontrevoie.fr/dns-query|https://doh.lacontrevoie.fr/dns-query](https://doh.lacontrevoie.fr/dns-query|eu|runtime-check
-ns0_fdn_fr_dns_query_https_ns0_fdn_fr_dns_query|clean|без-фильтрации|ns0.fdn.fr/dns-query](https://ns0.fdn.fr/dns-query|https://ns0.fdn.fr/dns-query](https://ns0.fdn.fr/dns-query|eu|runtime-check
-ns1_fdn_fr_dns_query_https_ns1_fdn_fr_dns_query|clean|без-фильтрации|ns1.fdn.fr/dns-query](https://ns1.fdn.fr/dns-query|https://ns1.fdn.fr/dns-query](https://ns1.fdn.fr/dns-query|eu|runtime-check
-odvr_nic_cz_dns_query_https_odvr_nic_cz_dns_query|clean|без-фильтрации|odvr.nic.cz/dns-query](https://odvr.nic.cz/dns-query|https://odvr.nic.cz/dns-query](https://odvr.nic.cz/dns-query|global|runtime-check
-odvr_nic_cz_doh|clean|без-фильтрации|odvr.nic.cz/doh|https://odvr.nic.cz/doh|global|runtime-check
-pub_dns_query_https_dns_pub_dns_query|clean|без-фильтрации|pub/dns-query](https://dns.pub/dns-query|https://dns.pub/dns-query](https://dns.pub/dns-query|global|runtime-check
+cznic_odvr_doh|clean|unfiltered|CZ.NIC ODVR DoH|https://odvr.nic.cz/doh|cz/eu|verified-published-current
+cznic_odvr_query|clean|unfiltered|CZ.NIC ODVR Query|https://odvr.nic.cz/dns-query|cz/eu|source-listed
 doh_seby|clean|unfiltered|Seby DNS|https://doh.seby.io/dns-query|global|source-listed
-seby_io_dns_query_https_doh_seby_io_dns_query|clean|без-фильтрации|seby.io/dns-query](https://doh.seby.io/dns-query|https://doh.seby.io/dns-query](https://doh.seby.io/dns-query|global|runtime-check
 dns_surfshark|clean|unfiltered|Surfshark DNS|https://dns.surfsharkdns.com/dns-query|global|source-listed
-surfsharkcom_dns_query_https_dns_surfsharkdns_com_|clean|без-фильтрации|surfsharkcom/dns-query](https://dns.surfsharkdns.com/dns-query|https://dns.surfsharkdns.com/dns-query](https://dns.surfsharkdns.com/dns-query|global|runtime-check
-dns_switch|clean|privacy|SWITCH DNS|https://dns.switch.ch/dns-query|ch/eu|source-listed
-switch_ch_dns_query_https_dns_switch_ch_dns_query|clean|без-фильтрации|switch.ch/dns-query](https://dns.switch.ch/dns-query|https://dns.switch.ch/dns-query](https://dns.switch.ch/dns-query|eu|runtime-check
+hostux|clean|unfiltered|Hostux DNS|https://dns.hostux.net/dns-query|global|source-listed
 
 # --- Безопасность ---
+cloudflare_security|security|malware|Cloudflare Security|https://security.cloudflare-dns.com/dns-query|global|verified-published-current
+quad9_secure|security|malware+dnssec|Quad9 Secure|https://dns.quad9.net/dns-query|global|verified-published-current
+quad9_ecs|security|malware+ecs|Quad9 Secure ECS|https://dns11.quad9.net/dns-query|global|verified-published-current
+controld_p1|security|malware|Control D Malware|https://freedns.controld.com/p1|global|verified-published-current
+opendns_standard|security|phishing+malware|OpenDNS Standard|https://doh.opendns.com/dns-query|global|verified-published-current
+cleanbrowsing_security|security|phishing+malware|CleanBrowsing Security|https://doh.cleanbrowsing.org/doh/security-filter/|global|verified-published-current
+dns4eu_protective|security|malware+phishing|DNS4EU Protective|https://protective.joindns4.eu/dns-query|eu|verified-published-current
+cert_ee|security|malware+phishing|CERT-EE|https://dns.cert.ee/dns-query|estonia|verified-published-current
+cira_protected|security|malware+phishing|CIRA Protected|https://protected.canadianshield.cira.ca/dns-query|canada|verified-published-current
+one_dns_block|security|malware|OneDNS Block|https://doh.onedns.net/dns-query|asia|verified-published-current
+hagezi_root|security|ads+tracking+malware+phishing|HaGeZi Root|https://root.hagezi.org/dns-query|germany|verified-published-current
+hagezi_wurzn|security|ads+tracking+malware+phishing|HaGeZi Wurzn|https://wurzn.hagezi.org/dns-query|germany|verified-published-current
+hagezi_juuri|security|ads+tracking+malware+phishing|HaGeZi Juuri|https://juuri.hagezi.org/dns-query|finland|verified-published-current
+hagezi_ctif|security|threat-only|HaGeZi CTIF|https://ctif.hagezi.org/dns-query|germany|verified-published-current
+openbld_ada|security|ads+tracking+malware+phishing|OpenBLD ADA|https://ada.openbld.net/dns-query|global|verified-published-current
+openbld_ric|security|strict-filtering|OpenBLD RIC|https://ric.openbld.net/dns-query|global|verified-published-current
+dnsforge_strict|security|strict-filtering|dnsforge Strict|https://hard.dnsforge.de/dns-query|germany|verified-published-current
+dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
 nsec_arnor|security|malware+phishing|arnor.org|https://nsec.arnor.org/dns-query|global|source-listed
-cert_ee|security|malware+phishing|CERT-EE|https://dns.cert.ee/dns-query|ee/eu|source-listed
-cert_ee_dns_query_https_dns_cert_ee_dns_query|security|защита|cert.ee/dns-query](https://dns.cert.ee/dns-query|https://dns.cert.ee/dns-query](https://dns.cert.ee/dns-query|global|runtime-check
-cznic_odvr|security|dnssec+privacy|CZ.NIC ODVR|https://odvr.nic.cz/dns-query|cz/eu|source-listed
-dns4eu_protective|security|malware+phishing|DNS4EU Protective|https://protective.joindns4.eu/dns-query|eu|source-listed
-dnsforge|security|ads+tracking|dnsforge|https://dnsforge.de/dns-query|de/eu|source-listed
-dnsforge_strict|security|strict-filtering|dnsforge Strict|https://hard.dnsforge.de/dns-query|de/eu|source-listed
-nsec_arnor_org_dns_query_https_nsec_arnor_org_dns_|security|защита|nsec.arnor.org/dns-query](https://nsec.arnor.org/dns-query|https://nsec.arnor.org/dns-query](https://nsec.arnor.org/dns-query|global|runtime-check
 
 # --- Приватность ---
-aa_net_uk_dns_query_https_dns_aa_net_uk_dns_query|privacy|приватность|aa.net.uk/dns-query](https://dns.aa.net.uk/dns-query|https://dns.aa.net.uk/dns-query](https://dns.aa.net.uk/dns-query|global|runtime-check
-all_mullvad_net_dns_query_https_all_dns_mullvad_ne|privacy|приватность|all.mullvad.net/dns-query](https://all.dns.mullvad.net/dns-query|https://all.dns.mullvad.net/dns-query](https://all.dns.mullvad.net/dns-query|global|runtime-check
-applied_privacy|privacy|privacy|Applied Privacy|https://doh.applied-privacy.net/query|eu|source-listed
-base_mullvad_net_dns_query_https_base_dns_mullvad_|privacy|приватность|base.mullvad.net/dns-query](https://base.dns.mullvad.net/dns-query|https://base.dns.mullvad.net/dns-query](https://base.dns.mullvad.net/dns-query|global|runtime-check
-cira_private|privacy|privacy+dnssec|CIRA Private|https://private.canadianshield.cira.ca/dns-query|ca|source-listed
-cira_protected|privacy|privacy+malware|CIRA Protected|https://protected.canadianshield.cira.ca/dns-query|ca|source-listed
-digitale_gesellschaft|privacy|privacy|Digitale Gesellschaft|https://dns.digitale-gesellschaft.ch/dns-query|ch/eu|source-listed
-digitale_gesellschaft_ch_dns_query_https_dns_digit|privacy|приватность|digitale-gesellschaft.ch/dns-query](https://dns.digitale-gesellschaft.ch/dns-query|https://dns.digitale-gesellschaft.ch/dns-query](https://dns.digitale-gesellschaft.ch/dns-query|eu|runtime-check
-dns_sb|privacy|dnssec+qname-min|DNS.SB|https://doh.dns.sb/dns-query|eu/global|source-listed
-extended_mullvad_net_dns_query_https_extended_dns_|privacy|приватность|extended.mullvad.net/dns-query](https://extended.dns.mullvad.net/dns-query|https://extended.dns.mullvad.net/dns-query](https://extended.dns.mullvad.net/dns-query|global|runtime-check
-ffmuc|privacy|uncensored+privacy|FFMUC|https://doh.ffmuc.net/dns-query|de/eu|source-listed
-mullvad_adblock|privacy|ads+tracking|Mullvad Adblock|https://adblock.dns.mullvad.net/dns-query|global|source-listed
-mullvad_all|privacy|ads+tracking+malware+adult+social|Mullvad All|https://all.dns.mullvad.net/dns-query|global|source-listed
-mullvad_base|privacy|ads+tracking+malware|Mullvad Base|https://base.dns.mullvad.net/dns-query|global|source-listed
-mullvad_clean|privacy|qname-minimization|Mullvad DNS|https://dns.mullvad.net/dns-query|global|source-listed
-mullvad_extended|privacy|ads+tracking+malware+social|Mullvad Extended|https://extended.dns.mullvad.net/dns-query|global|source-listed
-mullvad_family|privacy|ads+tracking+malware+adult|Mullvad Family|https://family.dns.mullvad.net/dns-query|global|source-listed
-mullvad_net_dns_query_https_dns_mullvad_net_dns_qu|privacy|приватность|mullvad.net/dns-query](https://dns.mullvad.net/dns-query|https://dns.mullvad.net/dns-query](https://dns.mullvad.net/dns-query|global|runtime-check
-private_canadianshield_cira_ca_dns_query_https_pri|privacy|приватность|private.canadianshield.cira.ca/dns-query](https://private.canadianshield.cira.ca/dns-query|https://private.canadianshield.cira.ca/dns-query](https://private.canadianshield.cira.ca/dns-query|eu|runtime-check
-protected_canadianshield_cira_ca_dns_query_https_p|privacy|приватность|protected.canadianshield.cira.ca/dns-query](https://protected.canadianshield.cira.ca/dns-query|https://protected.canadianshield.cira.ca/dns-query](https://protected.canadianshield.cira.ca/dns-query|eu|runtime-check
+mullvad_clean|privacy|qname-minimization|Mullvad Clean|https://dns.mullvad.net/dns-query|global|verified-published-current
+mullvad_adblock|adblock|ads+tracking|Mullvad Adblock|https://adblock.dns.mullvad.net/dns-query|global|verified-published-current
+mullvad_base|security|ads+tracking+malware|Mullvad Base|https://base.dns.mullvad.net/dns-query|global|verified-published-current
+mullvad_extended|security|ads+tracking+malware+social|Mullvad Extended|https://extended.dns.mullvad.net/dns-query|global|verified-published-current
+nextdns_fast|privacy|unfiltered|NextDNS|https://dns.nextdns.io|global|verified-published-current
+nextdns_anycast|privacy|anycast|NextDNS Anycast|https://anycast.dns.nextdns.io|global|verified-published-current
+dns_sb|privacy|dnssec+no-logging|DNS.SB|https://doh.dns.sb/dns-query|global|verified-published-current
+applied_privacy|privacy|privacy|Applied Privacy|https://doh.applied-privacy.net/query|europe|verified-published-current
+cznic_odvr|security|dnssec+privacy|CZ.NIC ODVR|https://odvr.nic.cz/doh|czechia|verified-published-current
+digitale_gesellschaft|privacy|privacy|Digitale Gesellschaft|https://dns.digitale-gesellschaft.ch/dns-query|switzerland|verified-published-current
+cira_private|privacy|unfiltered|CIRA Private|https://private.canadianshield.cira.ca/dns-query|canada|verified-published-current
+libredns_clean|privacy|privacy|LibreDNS|https://doh.libredns.gr/dns-query|greece/eu|verified-published-current
+switch_ch|privacy|privacy|SWITCH DNS|https://dns.switch.ch/dns-query|switzerland|verified-published-current
+wikimedia|privacy|anycast|Wikimedia DNS|https://wikimedia-dns.org/dns-query|global|verified-published-current
+pumplex|privacy|no-ads+dnssec|PumpleX|https://dns.pumplex.com/dns-query|france|verified-published-current
+dnsforge|privacy|privacy|dnsforge|https://dnsforge.de/dns-query|germany|verified-published-current
+ffmuc|privacy|community|FFMUC|https://doh.ffmuc.net/dns-query|germany|verified-published-current
 
 # --- Блокировка рекламы ---
-adblock_mullvad_net_dns_query_https_adblock_dns_mu|adblock|реклама+трекеры|adblock.mullvad.net/dns-query](https://adblock.dns.mullvad.net/dns-query|https://adblock.dns.mullvad.net/dns-query](https://adblock.dns.mullvad.net/dns-query|global|runtime-check
+adguard_default|adblock|ads+tracking+phishing|AdGuard DNS|https://dns.adguard-dns.com/dns-query|global|verified-published-current
+controld_p2|adblock|ads+tracking|Control D Ads+Tracking|https://freedns.controld.com/p2|global|verified-published-current
+dns4eu_noads|adblock|ads+malware|DNS4EU No Ads|https://noads.joindns4.eu/dns-query|eu|verified-published-current
+libredns_ads|adblock|ads|LibreDNS Ads|https://doh.libredns.gr/ads|greece/eu|verified-published-current
+dnsguard|adblock|ads+tracking+malware|DNSGuard|https://dns.dnsguard.pub/dns-query|global|verified-published-current
+nwps_standard|adblock|ads+tracking+malware|NWPS.fi Standard|https://public.ns.nwps.fi/dns-query|finland|verified-published-current
+oszx|adblock|ads|OSZX DNS|https://dns.oszx.co/dns-query|france|verified-published-current
 angry_im|adblock|ads|Angry.im|https://doh.angry.im/dns-query|global|source-listed
-angry_im_dns_query_https_doh_angry_im_dns_query|adblock|реклама+трекеры|angry.im/dns-query](https://doh.angry.im/dns-query|https://doh.angry.im/dns-query](https://doh.angry.im/dns-query|global|runtime-check
 dns_bebas_default|adblock|ads+malware+phishing|BebasDNS|https://dns.bebasid.com/dns-query|id/global|source-listed
-blokada_org_dns_query_https_dns_blokada_org_dns_qu|adblock|реклама+трекеры|blokada.org/dns-query](https://dns.blokada.org/dns-query|https://dns.blokada.org/dns-query](https://dns.blokada.org/dns-query|global|runtime-check
-clean_dnsforge_de_dns_query_https_clean_dnsforge_d|adblock|реклама+трекеры|clean.dnsforge.de/dns-query](https://clean.dnsforge.de/dns-query|https://clean.dnsforge.de/dns-query](https://clean.dnsforge.de/dns-query|eu|runtime-check
-dns4eu_noads|adblock|ads+malware|DNS4EU No Ads|https://noads.joindns4.eu/dns-query|eu|source-listed
-dnsforge_de_dns_query_https_dnsforge_de_dns_query|adblock|реклама+трекеры|dnsforge.de/dns-query](https://dnsforge.de/dns-query|https://dnsforge.de/dns-query](https://dnsforge.de/dns-query|eu|runtime-check
-hard_dnsforge_de_dns_query_https_hard_dnsforge_de_|adblock|реклама+трекеры|hard.dnsforge.de/dns-query](https://hard.dnsforge.de/dns-query|https://hard.dnsforge.de/dns-query](https://hard.dnsforge.de/dns-query|eu|runtime-check
+blokada|adblock|privacy|Blokada DNS|https://dns.blokada.org/dns-query|global|source-listed
 
 # --- Семейная защита ---
-cira_family|family|adult+malware|CIRA Family|https://family.canadianshield.cira.ca/dns-query|ca|source-listed
-dns4eu_child|family|child+malware|DNS4EU Child|https://child.joindns4.eu/dns-query|eu|source-listed
-dns4eu_child_noads|family|child+ads|DNS4EU Child No Ads|https://child-noads.joindns4.eu/dns-query|eu|source-listed
-family_canadianshield_cira_ca_dns_query_https_fami|family|семейный|family.canadianshield.cira.ca/dns-query](https://family.canadianshield.cira.ca/dns-query|https://family.canadianshield.cira.ca/dns-query](https://family.canadianshield.cira.ca/dns-query|eu|runtime-check
-family_mullvad_net_dns_query_https_family_dns_mull|family|семейный|family.mullvad.net/dns-query](https://family.dns.mullvad.net/dns-query|https://family.dns.mullvad.net/dns-query](https://family.dns.mullvad.net/dns-query|global|runtime-check
+cloudflare_family|family|malware+adult|Cloudflare Family|https://family.cloudflare-dns.com/dns-query|global|verified-published-current
+adguard_family|family|ads+tracking+adult|AdGuard Family|https://family.adguard-dns.com/dns-query|global|verified-published-current
+mullvad_family|family|ads+tracking+malware+adult+gambling|Mullvad Family|https://family.dns.mullvad.net/dns-query|global|verified-published-current
+mullvad_all|family|ads+tracking+malware+adult+gambling+social|Mullvad All|https://all.dns.mullvad.net/dns-query|global|verified-published-current
+controld_p3|social|social|Control D Social|https://freedns.controld.com/p3|global|verified-published-current
+controld_family|family|family|Control D Family|https://freedns.controld.com/family|global|verified-published-current
+opendns_family|family|adult|OpenDNS FamilyShield|https://doh.familyshield.opendns.com/dns-query|global|verified-published-current
+cleanbrowsing_adult|family|adult+malware|CleanBrowsing Adult|https://doh.cleanbrowsing.org/doh/adult-filter/|global|verified-published-current
+cleanbrowsing_family|family|adult+family|CleanBrowsing Family|https://doh.cleanbrowsing.org/doh/family-filter/|global|verified-published-current
+dns4eu_child|family|child+malware|DNS4EU Child|https://child.joindns4.eu/dns-query|eu|verified-published-current
+dns4eu_child_noads|family|child+ads|DNS4EU Child No Ads|https://child-noads.joindns4.eu/dns-query|eu|verified-published-current
+dns_for_family|family|adult|DNS for Family|https://dns-doh.dnsforfamily.com/dns-query|global|verified-published-current
+cira_family|family|adult+malware|CIRA Family|https://family.canadianshield.cira.ca/dns-query|canada|verified-published-current
+nwps_kids|family|kids+ads+malware|NWPS.fi Kids|https://kids.ns.nwps.fi/dns-query|finland|verified-published-current
+iijjp|family|child-protection|IIJ.JP DNS|https://public.dns.iij.jp/dns-query|japan|verified-published-current
+dnsforge_youth|family|youth-protection|dnsforge Youth Protection|https://clean.dnsforge.de/dns-query|germany|verified-published-current
 EOF_DNS
 fi
 if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FINAL-HYBRID' "$NTP_CATALOG" 2>/dev/null; then
@@ -1437,7 +1453,8 @@ verify_doh_endpoint() {
     _port="$(url_port "$_url")"
     _ip="$(resolve_host "$_host")"
     [ -n "$_ip" ] || { err_msg "DoH «$_name»: не удалось определить адрес $_host."; return 1; }
-    _q="$TMP_DIR/verify-q.$$"; _b="$TMP_DIR/verify-b.$$"; _h="$TMP_DIR/verify-h.$$"
+    _suffix="$$-$(date +%s%N | cut -c1-8)"
+    _q="$TMP_DIR/verify-q.$_suffix"; _b="$TMP_DIR/verify-b.$_suffix"; _h="$TMP_DIR/verify-h.$_suffix"
     printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$_q"
     _res="$(curl -sS -o "$_b" -D "$_h" -w '%{http_code}|%{errormsg}' --connect-timeout 3 --max-time 6 --resolve "$_host:$_port:$_ip" -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' --data-binary "@$_q" "$_url" 2>/dev/null)"
     _code="${_res%%|*}"
@@ -2259,6 +2276,94 @@ reconcile_dnsmasq >/dev/null 2>&1
 /etc/init.d/dnsmasq restart >/dev/null 2>&1
 save_config
 }
+remove_sysctl_base() {
+f="/etc/sysctl.d/90-dns-manager.conf"
+sf="$STATE_DIR/sysctl-before.conf"
+[ -f "$f" ] || return 0
+for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
+old="$(awk -F'|' -v k="$kv" '$1==k{print $2;exit}' "$sf" 2>/dev/null)"
+[ -n "$old" ] && [ "$old" != unknown ] && sysctl -w "$kv=$old" >/dev/null 2>&1 || true
+done
+rm -f "$f" "$sf"
+}
+
+remove_go_optimize() {
+for f in /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale; do
+bak="$f.dns-manager.bak"
+[ -f "$bak" ] || continue
+curh="$(file_hash "$f")"; managedh="$(cat "$STATE_DIR/$(basename "$f").managed.sha256" 2>/dev/null)"
+if [ -n "$managedh" ] && [ -n "$curh" ] && [ "$curh" != "$managedh" ]; then
+warn_msg "Не восстанавливаю $f: файл изменён вручную."
+continue
+fi
+mv "$bak" "$f" 2>/dev/null && rm -f "$STATE_DIR/$(basename "$f").managed.sha256"
+done
+}
+
+reload_fw() {
+if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+}
+
+apply_extras_now() {
+case "$1" in
+balance|tld)   reconcile_dnsmasq >/dev/null 2>&1; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+ntp)           [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback;;
+quic)          apply_quic_toggle;;
+mtu)           apply_mtu_toggle;;
+sysctl)        [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || remove_sysctl_base;;
+go)            [ "$GO_OPTIMIZE" = 1 ] && apply_go || remove_go_optimize;;
+force)         [ "$FORCE_DOH" = 1 ] && apply_dns_force || remove_dns_force; reload_fw;;
+ntp_clients)   [ "$NTP_CLIENTS" = 1 ] && apply_ntp_clients || remove_ntp_clients; /etc/init.d/dnsmasq restart >/dev/null 2>&1; reload_fw;;
+dnsmasq_perf)  [ "$DNSMASQ_PERF" = 1 ] && apply_dnsmasq_perf || remove_dnsmasq_perf; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+client_fixes)  [ "$CLIENT_FIXES" = 1 ] && apply_client_fixes || remove_client_fixes; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+sysctl_ext)    [ "$SYSCTL_EXTENDED" = 1 ] && apply_sysctl_extended || remove_sysctl_extended;;
+ts_hotplug)    [ "$TAILSCALE_HOTPLUG" = 1 ] && apply_tailscale_hotplug || remove_tailscale_hotplug;;
+cron)          cleanup_manager_cron;;
+esac
+save_config
+}
+
+apply_bootstrap_only() {
+b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
+i=0; changed=0
+while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
+if [ "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)" = 1 ]; then
+uci set "https-dns-proxy.@https-dns-proxy[$i].bootstrap_dns=$b_list"
+changed=1
+fi
+i=$((i+1))
+done
+if [ "$changed" = 1 ]; then
+uci commit https-dns-proxy 2>/dev/null
+/etc/init.d/https-dns-proxy restart >/dev/null 2>&1
+ok_msg "Bootstrap обновлён для наших DoH-инстансов. Ядро не тронуто."
+else
+info_msg "Наших DoH-секций нет — bootstrap будет использован при следующем применении."
+fi
+save_config
+}
+
+check_module_state() {
+sec="$(get_dnsmasq_section)"
+case "$1" in
+balance) [ "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)" = 1 ] && printf 1 || printf 0;;
+tld) uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n' | grep -q '^/ru/' && printf 1 || printf 0;;
+ntp) [ "$(uci -q get system.ntp.use_dhcp 2>/dev/null)" = 0 ] && uci -q get system.ntp.server 2>/dev/null | grep -qE '([0-9]{1,3}\.){3}[0-9]{1,3}' && printf 1 || printf 0;;
+quic) [ "$QUIC_OURS" = 1 ] && printf 1 || printf 0;;
+mtu) [ "$(uci -q get firewall.@defaults[0].mtu_fix 2>/dev/null)" = 1 ] && printf 1 || printf 0;;
+sysctl) [ -f /etc/sysctl.d/90-dns-manager.conf ] && printf 1 || printf 0;;
+sysctl_ext) [ -f /etc/sysctl.d/91-dns-manager-extended.conf ] && printf 1 || printf 0;;
+go) grep -qs 'DNS_MANAGER_GOMEMLIMIT' /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale 2>/dev/null && printf 1 || printf 0;;
+force) uci -q get firewall.dns_manager_dns_redirect >/dev/null 2>&1 && printf 1 || printf 0;;
+ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0;;
+dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0;;
+client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0;;
+ts_hotplug) [ -x /etc/init.d/tailscale ] || { printf 1; return; }; [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0;;
+cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0;;
+*) printf 0;;
+esac
+}
 apply_quic_toggle() {
     if [ "$BLOCK_QUIC" != 1 ]; then
         for _rname in Block_UDP_80 Block_UDP_443; do
@@ -2334,19 +2439,20 @@ printf "  ${C_GREEN}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(module
 printf "  ${C_GREEN}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(module_state_word tld "$TLD_RU_ENABLED")"
 printf "  ${C_GREEN}[3]${C_NC} NTP IP-first: %b\n" "$(module_state_word ntp "$NTP_IP_FALLBACK")"
 printf "\n${C_SECTION}ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(module_state_word "$BLOCK_QUIC")"
-printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(module_state_word "$MTU_FIX")"
-printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(module_state_word "$SYSCTL_TUNING")"
-printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(module_state_word "$GO_OPTIMIZE")"
-printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(module_state_word "$FORCE_DOH")"
-printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(module_state_word "$NTP_CLIENTS")"
-printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(module_state_word "$DNSMASQ_PERF")"
-printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(module_state_word "$CLIENT_FIXES")"
-printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(module_state_word "$SYSCTL_EXTENDED")"
+printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(module_state_word force "$FORCE_DOH")"
+printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(module_state_word sysctl_ext "$SYSCTL_EXTENDED")"
 printf "  ${C_YELLOW}[13]${C_NC} Автоматический запуск Tailscale после NTP: %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(module_state_word "$CRON_CLEANUP")"
+printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(module_state_word cron "$CRON_CLEANUP")"
 printf "  ${C_YELLOW}[15]${C_NC} IP-заглушки\n"
-printf "\n${C_CYAN}Изменения только подготавливаются. Чтобы применить их, используйте пункт «Показать и применить выбранное».${C_NC}\n"
+printf "\n${C_CYAN}Переключатели применяются сразу и не перезаписывают DNS-ядро.${C_NC}\n"
+printf "${C_CYAN}Пункт 14 в главном меню — только для слотов, профилей и bootstrap.${C_NC}\n"
 printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
 case "$c" in
 1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; apply_extras_now balance; pause;;
