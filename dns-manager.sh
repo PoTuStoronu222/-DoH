@@ -1309,10 +1309,15 @@ remove_sysctl_extended() {
     rm -f "$f" "$sf"
 }
 apply_tailscale_hotplug() {
-    [ "${TAILSCALE_HOTPLUG:-0}" = 1 ] || return 0
-    [ -x /etc/init.d/tailscale ] || { warn_msg "Tailscale не установлен — hotplug не создаётся."; return 0; }
-    f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
-    cat > "$f.tmp" <<'EOF_HOT'
+[ "${TAILSCALE_HOTPLUG:-0}" = 1 ] || return 0
+f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
+mkdir -p /etc/hotplug.d/iface 2>/dev/null
+# Если на нашем месте лежит старый скрипт без нашей метки — сохраняем копию.
+if [ -f "$f" ] && ! grep -q '^# DNS_MANAGER_TAILSCALE_HOTPLUG=1$' "$f" 2>/dev/null; then
+cp -p "$f" "$f.previous" 2>/dev/null
+info_msg "Старый скрипт $f сохранён в $f.previous"
+fi
+cat > "$f.tmp" <<'EOF_HOT'
 #!/bin/sh
 # DNS_MANAGER_TAILSCALE_HOTPLUG=1
 [ "$ACTION" = ifup ] || exit 0
@@ -1326,15 +1331,29 @@ NOW="$(date +%s)"; START="$(cat "$MARK" 2>/dev/null)"
 [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale restart >/dev/null 2>&1 || true
 rm -f "$MARK"
 EOF_HOT
-    mv "$f.tmp" "$f" || return 1
-    chmod 755 "$f"
-    date +%s > "$STATE_DIR/tailscale-hotplug-window" 2>/dev/null || true
-    record_own "file" "$f" "created" "tailscale-hotplug"
+mv "$f.tmp" "$f" || return 1
+chmod 755 "$f"
+date +%s > "$STATE_DIR/tailscale-hotplug-window" 2>/dev/null || true
+record_own "file" "$f" "created" "tailscale-hotplug"
+if [ -x /etc/init.d/tailscale ]; then
+ok_msg "Hotplug-скрипт Tailscale установлен."
+else
+info_msg "Tailscale сейчас не установлен — скрипт уже лежит и заработает сразу после установки Tailscale."
+fi
 }
 remove_tailscale_hotplug() {
-    f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
-    if grep -q '^# DNS_MANAGER_TAILSCALE_HOTPLUG=1$' "$f" 2>/dev/null; then rm -f "$f"; fi
-    rm -f "$STATE_DIR/tailscale-hotplug-window"
+f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
+# Путь 99-dns-manager-* — наша зона имён: любой файл здесь считается
+# артефактом DNS Manager (включая старые версии) и удаляется при выключении.
+if [ -f "$f" ]; then
+rm -f "$f"
+if [ -f "$f.previous" ]; then
+ok_msg "Hotplug-скрипт Tailscale удалён. Старая копия: $f.previous"
+else
+ok_msg "Hotplug-скрипт Tailscale удалён."
+fi
+fi
+rm -f "$STATE_DIR/tailscale-hotplug-window"
 }
 cleanup_manager_cron() {
     [ "${CRON_CLEANUP:-0}" = 1 ] || return 0
@@ -2365,7 +2384,7 @@ check_module_state() {
         ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0 ;;
         dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0 ;;
         client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0 ;;
-        ts_hotplug) [ -x /etc/init.d/tailscale ] || { printf 1; return; }; [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
+        ts_hotplug) [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
         cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0 ;;
         *) printf 0 ;;
     esac
