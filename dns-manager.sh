@@ -378,7 +378,7 @@ HAS_TAILSCALE="$OTHER_TAILSCALE"
 }
 disc_firewall() {
 QUIC_OURS=0; QUIC_FOREIGN=0
-if uci show firewall 2>/dev/null | grep -q "name='DnsMgr_QUIC_"; then
+if uci show firewall 2>/dev/null | grep -q "name='Block_UDP_"; then
 QUIC_OURS=1
 fi
 if uci show firewall 2>/dev/null | grep -q "name='Block_UDP_80'" && \
