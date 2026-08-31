@@ -1,3 +1,19 @@
+#!/bin/sh
+# ============================================================
+# DNS Manager v1.0 — Hybrid SmartDNS
+DNS Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
+# Первым делом читает реальное состояние роутера.
+#
+
+#   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
+#   - NTP IP-first: Cloudflare / NIST / Google отдельным профилем /
+
+#   - Bootstrap DNS
+
+#   - ownership OURS / FOREIGN / UNKNOWN
+#   - управление только собственными объектами, чужие сохраняются
+
+# ============================================================
 MANAGER_PATH="/usr/bin/dns-manager"
 VERSION="1.2-HYBRID"
 BASE_DIR="/etc/dns-manager"
@@ -241,7 +257,7 @@ _had_dns_profile=0
 : "${PORT_1:=}"; : "${PORT_2:=}"; : "${PORT_3:=}"; : "${PORT_4:=}"; : "${PORT_5:=}"; : "${PORT_6:=}"
 : "${PORT_RU:=}"; : "${PORT_RU_2:=}"
 : "${BOOTSTRAP_DNS:=77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15}"
-: "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"
+: "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"; : "${FORCE_DOH:=0}"
 : "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}"; : "${DNSMASQ_PERF:=0}"; : "${NTP_CLIENTS:=0}"; : "${CLIENT_FIXES:=0}"; : "${SYSCTL_EXTENDED:=0}"; : "${TAILSCALE_HOTPLUG:=0}"; : "${CRON_CLEANUP:=0}"
 : "${BALANCER_ENABLED:=1}"; : "${NTP_PRESET:=cf_ip}"; : "${DNS_PROFILE:=hybrid}"
 TLD_SPLIT="$TLD_RU_ENABLED"
@@ -275,6 +291,7 @@ MTU_FIX="$MTU_FIX"
 NTP_IP_FALLBACK="$NTP_IP_FALLBACK"
 SYSCTL_TUNING="$SYSCTL_TUNING"
 GO_OPTIMIZE="$GO_OPTIMIZE"
+FORCE_DOH="$FORCE_DOH"
 DNSMASQ_PERF="$DNSMASQ_PERF"
 NTP_CLIENTS="$NTP_CLIENTS"
 CLIENT_FIXES="$CLIENT_FIXES"
@@ -665,20 +682,21 @@ esac
 apply_ntp_ip_fallback() {
 servers="$(grep -v '^#' "$NTP_CATALOG" 2>/dev/null | grep "^${NTP_PRESET}|" | head -1 | cut -d'|' -f4)"
 [ -n "$servers" ] || { warn_msg "NTP-профиль '$NTP_PRESET' не найден в каталоге."; return 1; }
-
-while uci -q delete system.ntp.server >/dev/null 2>&1; do :; done
-# Записываем наши серверы в ОСНОВНУЮ секцию system.ntp
+[ -n "$(uci -q get system.ntp 2>/dev/null)" ] || uci -q set system.ntp=timeserver || return 1
 for ipx in $servers; do
-uci add_list system.ntp.server="$ipx"
+    _exists=0
+    for _cur_ntp in $(uci -q get system.ntp.server 2>/dev/null); do
+        [ "$_cur_ntp" = "$ipx" ] && _exists=1
+    done
+    [ "$_exists" = 1 ] || uci add_list system.ntp.server="$ipx" || return 1
 done
-uci set system.ntp.enabled='1'
-uci set system.ntp.use_dhcp='0'
-uci commit system
-
+uci set system.ntp.enabled='1' || return 1
+uci set system.ntp.use_dhcp='0' || return 1
+uci commit system || return 1
 /etc/init.d/sysntpd restart >/dev/null 2>&1
 record_own "ntp" "system.ntp.server" "$servers" "profile=$NTP_PRESET"
-ok_msg "NTP: серверы заменены на профиль '$NTP_PRESET' в основной секции system.ntp"
-log_tx "APPLY" "NTP" "REPLACE" "OK" "profile=$NTP_PRESET;servers=$servers"
+ok_msg "NTP: IP-профиль '$NTP_PRESET' добавлен без удаления существующих серверов."
+log_tx "APPLY" "NTP" "ADD" "OK" "profile=$NTP_PRESET;servers=$servers"
 }
 menu_ntp() {
 clear_screen
@@ -1275,6 +1293,30 @@ apply_ntp_if_needed() {
 [ "$NTP_IP_FALLBACK" = 1 ] || return 0
 apply_ntp_ip_fallback
 }
+url_host() {
+    _u="$1"
+    _h="${_u#https://}"
+    _h="${_h%%/*}"
+    case "$_h" in
+        *:*) printf '%s' "${_h%%:*}" ;;
+        *) printf '%s' "$_h" ;;
+    esac
+}
+url_port() {
+    _u="$1"
+    _h="${_u#https://}"
+    _h="${_h%%/*}"
+    case "$_h" in
+        *:*)
+            _p="${_h##*:}"
+            case "$_p" in
+                ''|*[!0-9]*) printf '443' ;;
+                *) printf '%s' "$_p" ;;
+            esac
+            ;;
+        *) printf '443' ;;
+    esac
+}
 verify_doh_endpoint() {
     _url="$(normalize_url "$1")"
     _name="$2"
@@ -1496,20 +1538,24 @@ printf "  ${C_YELLOW}Пользовательский DNS-профиль${C_NC}\
 for _s in 1 2 3 4 5 6; do eval "_v=\${SLOT_$_s}"; [ -n "$_v" ] && printf "  Слот %s: %s\n" "$_s" "$(dns_name "$_v")"; done
 [ -n "$SLOT_RU" ] && printf "  RU: %s\n" "$(dns_name "$SLOT_RU")"
 fi
-printf "\n${C_WHITE}Дополнительные изменения:${C_NC}\n"
+printf "\n${C_WHITE}Изменения DNS Core:${C_NC}\n"
 [ "$TLD_RU_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Раздельный DNS .ru/.su/.рф\n" || printf "  ${C_YELLOW}—${C_NC} Раздельный DNS не выбран\n"
 [ "$BALANCER_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Параллельный опрос DoH (allservers=1)\n" || printf "  ${C_YELLOW}—${C_NC} Параллельный режим не выбран\n"
 [ "$NTP_IP_FALLBACK" = 1 ] && printf "  ${C_GREEN}✓${C_NC} NTP по IP без зависимости от DNS\n" || printf "  ${C_YELLOW}—${C_NC} NTP не изменяется\n"
+if [ "$CORE_ONLY" != 1 ]; then
+printf "\n${C_WHITE}Дополнительные модули:${C_NC}\n"
 [ "$BLOCK_QUIC" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Блокировка QUIC UDP/80 и UDP/443\n" || printf "  ${C_YELLOW}—${C_NC} QUIC не изменяется\n"
 [ "$MTU_FIX" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Исправление MTU\n" || printf "  ${C_YELLOW}—${C_NC} MTU не изменяется\n"
 [ "$SYSCTL_TUNING" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация sysctl\n" || printf "  ${C_YELLOW}—${C_NC} sysctl не изменяется\n"
 [ "$GO_OPTIMIZE" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Оптимизация Go / Tailscale / TG WS\n" || printf "  ${C_YELLOW}—${C_NC} Go/Tailscale/TG WS не изменяется\n"
+[ "${FORCE_DOH:-0}" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Принудительный локальный DNS\n" || printf "  ${C_YELLOW}—${C_NC} Принудительный локальный DNS не изменяется\n"
 [ "$NTP_CLIENTS" = 1 ] && printf "  ${C_GREEN}✓${C_NC} NTP для клиентов LAN (DHCP 42 + DNAT 123)\n" || printf "  ${C_YELLOW}—${C_NC} NTP клиентов не изменяется\n"
 [ "$DNSMASQ_PERF" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Тюнинг производительности dnsmasq\n" || printf "  ${C_YELLOW}—${C_NC} Тюнинг dnsmasq не изменяется\n"
 [ "$CLIENT_FIXES" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Клиентские DNS-фиксы\n" || printf "  ${C_YELLOW}—${C_NC} Клиентские фиксы не изменяются\n"
 [ "$SYSCTL_EXTENDED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Расширенный sysctl + conntrack\n" || printf "  ${C_YELLOW}—${C_NC} Расширенный sysctl не изменяется\n"
 [ "$TAILSCALE_HOTPLUG" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Tailscale hotplug после NTP\n" || printf "  ${C_YELLOW}—${C_NC} Tailscale hotplug не изменяется\n"
-[ "$CRON_CLEANUP" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Очистка старых cron-задач DNS Manager\n" || printf "  ${C_YELLOW}—${C_NC} Cron не изменяется\n"
+[ "$CRON_CLEANUP" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Чистка старых cron-задач DNS Manager\n" || printf "  ${C_YELLOW}—${C_NC} Cron не изменяется\n"
+fi
 printf "\n${C_WHITE}Текущее состояние до применения:${C_NC}\n"
 printf "  dnsmasq: %b\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  DoH: %s (наших %s / чужих %s / неизвестных %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
@@ -1884,7 +1930,7 @@ _seen_urls="$TMP_DIR/auto-seen-urls"
 i=1
 while IFS='|' read -r _id _cat2 _name _ms _st; do
 [ -n "$_id" ] || continue
-_url="$(dns_url "$_id")"
+_url="$(normalize_url "$(dns_url "$_id")")"
 grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
 printf '%s\n' "$_url" >> "$_seen_urls"
 printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
@@ -1963,6 +2009,18 @@ safe_read a
 case "$a" in
 1)
 if auto_fill_slots "$goal"; then
+BLOCK_QUIC=0
+MTU_FIX=0
+SYSCTL_TUNING=0
+GO_OPTIMIZE=0
+FORCE_DOH=0
+NTP_CLIENTS=0
+DNSMASQ_PERF=0
+CLIENT_FIXES=0
+SYSCTL_EXTENDED=0
+TAILSCALE_HOTPLUG=0
+CRON_CLEANUP=0
+save_config
 CORE_ONLY=1
 apply_settings
 CORE_ONLY=0
@@ -2117,6 +2175,13 @@ else
 fi
 save_config
 }
+module_state_word() {
+case "$1" in
+1|yes|on) printf "${C_GREEN}✓ ВКЛ • будет применено${C_NC}" ;;
+0|no|off|"") printf "${C_YELLOW}✗ ВЫКЛ • не выбрано${C_NC}" ;;
+*) printf "${C_WHITE}%s${C_NC}" "$1" ;;
+esac
+}
 menu_extras() {
 while :; do
 clear_screen
@@ -2128,17 +2193,17 @@ printf "  ${C_GREEN}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(state_
 printf "  ${C_GREEN}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(state_word "$TLD_RU_ENABLED")"
 printf "  ${C_GREEN}[3]${C_NC} NTP IP-first: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
 printf "\n${C_SECTION}ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(state_word "$BLOCK_QUIC")"
-printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(state_word "$MTU_FIX")"
-printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(state_word "$SYSCTL_TUNING")"
-printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(state_word "$GO_OPTIMIZE")"
-printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(state_word "$FORCE_DOH")"
-printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(state_word "$NTP_CLIENTS")"
-printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(state_word "$DNSMASQ_PERF")"
-printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(state_word "$CLIENT_FIXES")"
-printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(state_word "$SYSCTL_EXTENDED")"
-printf "  ${C_YELLOW}[13]${C_NC} Tailscale hotplug после NTP: %b\n" "$(state_word "$TAILSCALE_HOTPLUG")"
-printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(state_word "$CRON_CLEANUP")"
+printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(module_state_word "$BLOCK_QUIC")"
+printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(module_state_word "$MTU_FIX")"
+printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(module_state_word "$SYSCTL_TUNING")"
+printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(module_state_word "$GO_OPTIMIZE")"
+printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(module_state_word "$FORCE_DOH")"
+printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(module_state_word "$NTP_CLIENTS")"
+printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(module_state_word "$DNSMASQ_PERF")"
+printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(module_state_word "$CLIENT_FIXES")"
+printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(module_state_word "$SYSCTL_EXTENDED")"
+printf "  ${C_YELLOW}[13]${C_NC} Tailscale hotplug после NTP: %b\n" "$(module_state_word "$TAILSCALE_HOTPLUG")"
+printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(module_state_word "$CRON_CLEANUP")"
 printf "  ${C_YELLOW}[15]${C_NC} IP-заглушки\n"
 printf "\n${C_CYAN}Изменения только подготавливаются. Чтобы применить их, используйте пункт «Показать и применить выбранное».${C_NC}\n"
 printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
@@ -2288,6 +2353,17 @@ printf "${C_GREEN}✓${C_NC} уникальные порты\n"
 printf "${C_GREEN}✓${C_NC} чужие DoH/Firewall не присваиваются менеджеру\n"
 printf "${C_GREEN}✓${C_NC} проверка после применения + автоматический rollback\n"
 printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN для IP/SNI/DPI/HTTP-блокировок.\n"
+BLOCK_QUIC=0
+MTU_FIX=0
+SYSCTL_TUNING=0
+GO_OPTIMIZE=0
+FORCE_DOH=0
+NTP_CLIENTS=0
+DNSMASQ_PERF=0
+CLIENT_FIXES=0
+SYSCTL_EXTENDED=0
+TAILSCALE_HOTPLUG=0
+CRON_CLEANUP=0
 test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
 DNS_PROFILE="hybrid"
@@ -2360,7 +2436,7 @@ safe_read c
             5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ" ;;
             6) show_best ;;
             7) show_map ;;
-            8) test_dns_catalog ;;
+            8) test_dns_catalog; show_tests ;;
             9) menu_slots ;;
             10) menu_bootstrap ;;
             11) menu_ntp ;;
