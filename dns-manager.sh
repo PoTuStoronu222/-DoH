@@ -833,9 +833,9 @@ fi
 local sec
 sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
 # Берем только первый IP-адрес на случай, если там несколько через пробел
-local b_ip="${BOOTSTRAP_DNS%% *}"
-[ -z "$b_ip" ] && b_ip="1.1.1.1" # Дефолтный страховочный IP
-uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
+local b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
+[ -z "$b_list" ] && b_list="1.1.1.1"
+uci set "https-dns-proxy.$sec.bootstrap_dns=$b_list" || return 1
 uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
 uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
 uci set "https-dns-proxy.$sec.bootstrap_dns=$b_ip" || return 1
@@ -932,14 +932,16 @@ reconcile_dnsmasq() {
     sec="$(get_dnsmasq_section)"
     uci -q get "dhcp.$sec" >/dev/null 2>&1 || return 1
     # Сохраняем прежние upstream и связанные параметры для функции «удалить изменения DNS Manager».
-    {
-        printf 'SERVER\n'
-        uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n'
-        printf 'ALLSERVERS=%s\n' "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)"
-        printf 'STRICTORDER=%s\n' "$(uci -q get "dhcp.$sec.strictorder" 2>/dev/null)"
-        printf 'NORESOLV=%s\n' "$(uci -q get "dhcp.$sec.noresolv" 2>/dev/null)"
-        printf 'SECTION=%s\n' "$sec"
-    } > "$PREV_DNSMASQ" 2>/dev/null || true
+    [ -s "$PREV_DNSMASQ" ] || {
+  {
+    printf 'SERVER\n'
+    uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n'
+    printf 'ALLSERVERS=%s\n' "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)"
+    printf 'STRICTORDER=%s\n' "$(uci -q get "dhcp.$sec.strictorder" 2>/dev/null)"
+    printf 'NORESOLV=%s\n' "$(uci -q get "dhcp.$sec.noresolv" 2>/dev/null)"
+    printf 'SECTION=%s\n' "$sec"
+  } > "$PREV_DNSMASQ" 2>/dev/null || true
+}
 
     while uci -q delete "dhcp.$sec.server" >/dev/null 2>&1; do :; done
     for s in 1 2 3 4 5 6; do
