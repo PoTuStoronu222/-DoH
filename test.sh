@@ -1,19 +1,3 @@
-#!/bin/sh
-# ============================================================
-# DNS Manager v1.0 — Hybrid SmartDNS
-DNS Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
-# Первым делом читает реальное состояние роутера.
-#
-
-#   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
-#   - NTP IP-first: Cloudflare / NIST / Google отдельным профилем /
-
-#   - Bootstrap DNS
-
-#   - ownership OURS / FOREIGN / UNKNOWN
-#   - ADD/UPDATE своих объектов, KEEP чужих
-
-# ============================================================
 MANAGER_PATH="/usr/bin/dns-manager"
 VERSION="1.2-HYBRID"
 BASE_DIR="/etc/dns-manager"
