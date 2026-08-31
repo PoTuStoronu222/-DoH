@@ -1047,7 +1047,6 @@ apply_quic() {
 
     uci add firewall rule >/dev/null 2>&1 || return 1
     uci set firewall.@rule[-1].name='Block_UDP_80' || return 1
-    uci set firewall.@rule[-1].dns_manager='1' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
@@ -1056,7 +1055,6 @@ apply_quic() {
 
     uci add firewall rule >/dev/null 2>&1 || return 1
     uci set firewall.@rule[-1].name='Block_UDP_443' || return 1
-    uci set firewall.@rule[-1].dns_manager='1' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
@@ -1064,8 +1062,6 @@ apply_quic() {
     uci set firewall.@rule[-1].target='REJECT' || return 1
 
     uci commit firewall || return 1
-    record_own "firewall" "name" "Block_UDP_80" "created"
-    record_own "firewall" "name" "Block_UDP_443" "created"
 }
 apply_sysctl() {
 [ "$SYSCTL_TUNING" = 1 ] || return 0
