@@ -85,13 +85,17 @@ mkdir -p "$CFG_DIR" "$STATE_DIR" "$TMP_DIR" 2>/dev/null
 touch "$LOG_FILE" "$TX_LOG" "$OWNERSHIP" 2>/dev/null
 }
 write_catalogs() {
-if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=7.0-OPENWRT' "$DNS_CATALOG" 2>/dev/null; then
+if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# # DNSCATVER=8.1-RU' "$DNS_CATALOG" 2>/dev/null; then
 [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
 cat > "$DNS_CATALOG" <<'EOF_DNS'
 # DNSCATVER=8.1-RU
 #! Список кандидатов. Работоспособность проверяется с роутера.
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 
+cat > "$DNS_CATALOG" <<'EOF_DNS'
+# DNSCATVER=8.1-RU
+#! Список кандидатов. Работоспособность проверяется с роутера.
+# FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # --- Обход блокировок / региональных ограничений / сервисы ---
 mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
 mafioznik_xyz|bypass|geo+ai+services|Mafioznik DNS XYZ|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
@@ -114,12 +118,10 @@ bebas_unfiltered|bypass|uncensored|BebasDNS Unfiltered|https://dns.bebasid.com/u
 dns4all|bypass|uncensored|DNS4all|https://doh.dns4all.eu/dns-query|eu/global|source-listed
 dns4eu_unfiltered|clean|unfiltered|DNS4EU Unfiltered|https://unfiltered.joindns4.eu/dns-query|eu|verified-published-current
 shecan|bypass|geo+services|Shecan DNS|https://free.shecan.ir/dns-query|ir/global|runtime-check
-
 # --- Региональные DNS ---
 yandex_ru|regional|ru+su+rf|Yandex RU|https://common.dot.dns.yandex.net/dns-query|ru|verified-published-current
 yandex_safe|regional|ru+su+rf|Yandex Safe|https://safe.dot.dns.yandex.net/dns-query|ru|runtime-check
 yandex_family|regional|ru+su+rf|Yandex Family|https://family.dot.dns.yandex.net/dns-query|ru|runtime-check
-
 # --- Чистые и публичные (Clean / Unfiltered) ---
 cloudflare_clean|clean|unfiltered|Cloudflare|https://cloudflare-dns.com/dns-query|global|verified-published-current
 google_clean|clean|unfiltered|Google Public DNS|https://dns.google/dns-query|global|verified-published-current
@@ -146,7 +148,6 @@ cznic_odvr_query|clean|unfiltered|CZ.NIC ODVR Query|https://odvr.nic.cz/dns-quer
 doh_seby|clean|unfiltered|Seby DNS|https://doh.seby.io/dns-query|global|source-listed
 dns_surfshark|clean|unfiltered|Surfshark DNS|https://dns.surfsharkdns.com/dns-query|global|source-listed
 hostux|clean|unfiltered|Hostux DNS|https://dns.hostux.net/dns-query|global|source-listed
-
 # --- Безопасность ---
 cloudflare_security|security|malware|Cloudflare Security|https://security.cloudflare-dns.com/dns-query|global|verified-published-current
 quad9_secure|security|malware+dnssec|Quad9 Secure|https://dns.quad9.net/dns-query|global|verified-published-current
@@ -167,7 +168,6 @@ openbld_ric|security|strict-filtering|OpenBLD RIC|https://ric.openbld.net/dns-qu
 dnsforge_strict|security|strict-filtering|dnsforge Strict|https://hard.dnsforge.de/dns-query|germany|verified-published-current
 dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
 nsec_arnor|security|malware+phishing|arnor.org|https://nsec.arnor.org/dns-query|global|source-listed
-
 # --- Приватность ---
 mullvad_clean|privacy|qname-minimization|Mullvad Clean|https://dns.mullvad.net/dns-query|global|verified-published-current
 mullvad_adblock|adblock|ads+tracking|Mullvad Adblock|https://adblock.dns.mullvad.net/dns-query|global|verified-published-current
@@ -186,7 +186,6 @@ wikimedia|privacy|anycast|Wikimedia DNS|https://wikimedia-dns.org/dns-query|glob
 pumplex|privacy|no-ads+dnssec|PumpleX|https://dns.pumplex.com/dns-query|france|verified-published-current
 dnsforge|privacy|privacy|dnsforge|https://dnsforge.de/dns-query|germany|verified-published-current
 ffmuc|privacy|community|FFMUC|https://doh.ffmuc.net/dns-query|germany|verified-published-current
-
 # --- Блокировка рекламы ---
 adguard_default|adblock|ads+tracking+phishing|AdGuard DNS|https://dns.adguard-dns.com/dns-query|global|verified-published-current
 controld_p2|adblock|ads+tracking|Control D Ads+Tracking|https://freedns.controld.com/p2|global|verified-published-current
@@ -198,7 +197,6 @@ oszx|adblock|ads|OSZX DNS|https://dns.oszx.co/dns-query|france|verified-publishe
 angry_im|adblock|ads|Angry.im|https://doh.angry.im/dns-query|global|source-listed
 dns_bebas_default|adblock|ads+malware+phishing|BebasDNS|https://dns.bebasid.com/dns-query|id/global|source-listed
 blokada|adblock|privacy|Blokada DNS|https://dns.blokada.org/dns-query|global|source-listed
-
 # --- Семейная защита ---
 cloudflare_family|family|malware+adult|Cloudflare Family|https://family.cloudflare-dns.com/dns-query|global|verified-published-current
 adguard_family|family|ads+tracking+adult|AdGuard Family|https://family.adguard-dns.com/dns-query|global|verified-published-current
@@ -494,11 +492,11 @@ ipx="$(resolve_host "$host")"
 q="$TMP_DIR/q.$id"; body="$TMP_DIR/body.$id"; hdr="$TMP_DIR/h.$id"
 : > "$body"; : > "$hdr"
 printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$q"
-result="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}|%{time_total}' \
+result="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}|%{time_total}|%{errormsg}' \
 --connect-timeout 3 --max-time 6 --resolve "$host:$port:$ipx" \
 -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' \
 --data-binary "@$q" "$url" 2>/dev/null)"
-code="${result%%|*}"; rest="${result#*|}"; tim="${rest#*|}"; err=""
+code="${result%%|*}"; rest="${result#*|}"; tim="${rest%%|*}"; err="${rest#*|}"
 [ -z "$code" ] && code="000"
 bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"; [ -n "$bytes" ] || bytes=0
 ctype="$(awk -F': *' 'tolower($1)=="content-type"{print tolower($2)}' "$hdr" 2>/dev/null | tail -n1 | tr -d '\r')"
@@ -1897,11 +1895,10 @@ UNKNOWN) printf '%s' 'владелец не определён';;
 esac
 }
 config_state_word() {
-v="$1"
-if [ "$v" = 1 ]; then
-printf '%s' "${C_GREEN}ВКЛ • выбрано${C_NC}"
+if [ "$1" = 1 ]; then
+printf "${C_GREEN}ВКЛ • выбрано${C_NC}"
 else
-printf '%s' "${C_YELLOW}ВЫКЛ • не выбрано${C_NC}"
+printf "${C_YELLOW}ВЫКЛ • не выбрано${C_NC}"
 fi
 }
 show_map() {
@@ -2211,26 +2208,6 @@ case "$c" in
 esac
 done
 }
-apply_bootstrap_only() {
-    b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
-    _i=0
-    _changed=0
-    while uci -q get "https-dns-proxy.@https-dns-proxy[$_i]" >/dev/null 2>&1; do
-        if [ "$(uci -q get "https-dns-proxy.@https-dns-proxy[$_i].dns_manager" 2>/dev/null)" = 1 ]; then
-            uci set "https-dns-proxy.@https-dns-proxy[$_i].bootstrap_dns=$b_list" || return 1
-            _changed=1
-        fi
-        _i=$((_i+1))
-    done
-    if [ "$_changed" = 1 ]; then
-        uci commit https-dns-proxy || return 1
-        /etc/init.d/https-dns-proxy restart >/dev/null 2>&1 || return 1
-        ok_msg "Bootstrap обновлён для действующих DNS Manager. Основная схема DNS не изменена."
-    else
-        info_msg "Действующих DoH DNS Manager нет. Выбранный Bootstrap сохранён для следующего применения."
-    fi
-    save_config
-}
 menu_bootstrap() {
 clear_screen
 menu_header "🎯 BOOTSTRAP DNS"
@@ -2344,26 +2321,6 @@ fi
 save_config
 }
 
-check_module_state() {
-sec="$(get_dnsmasq_section)"
-case "$1" in
-balance) [ "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)" = 1 ] && printf 1 || printf 0;;
-tld) uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n' | grep -q '^/ru/' && printf 1 || printf 0;;
-ntp) [ "$(uci -q get system.ntp.use_dhcp 2>/dev/null)" = 0 ] && uci -q get system.ntp.server 2>/dev/null | grep -qE '([0-9]{1,3}\.){3}[0-9]{1,3}' && printf 1 || printf 0;;
-quic) [ "$QUIC_OURS" = 1 ] && printf 1 || printf 0;;
-mtu) [ "$(uci -q get firewall.@defaults[0].mtu_fix 2>/dev/null)" = 1 ] && printf 1 || printf 0;;
-sysctl) [ -f /etc/sysctl.d/90-dns-manager.conf ] && printf 1 || printf 0;;
-sysctl_ext) [ -f /etc/sysctl.d/91-dns-manager-extended.conf ] && printf 1 || printf 0;;
-go) grep -qs 'DNS_MANAGER_GOMEMLIMIT' /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale 2>/dev/null && printf 1 || printf 0;;
-force) uci -q get firewall.dns_manager_dns_redirect >/dev/null 2>&1 && printf 1 || printf 0;;
-ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0;;
-dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0;;
-client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0;;
-ts_hotplug) [ -x /etc/init.d/tailscale ] || { printf 1; return; }; [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0;;
-cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0;;
-*) printf 0;;
-esac
-}
 apply_quic_toggle() {
     if [ "$BLOCK_QUIC" != 1 ]; then
         for _rname in Block_UDP_80 Block_UDP_443; do
@@ -2410,7 +2367,7 @@ check_module_state() {
         ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0 ;;
         dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0 ;;
         client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0 ;;
-        ts_hotplug) [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
+        ts_hotplug) [ -x /etc/init.d/tailscale ] || { printf 1; return; }; [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
         cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0 ;;
         *) printf 0 ;;
     esac

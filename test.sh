@@ -853,7 +853,6 @@ local b_ip="${BOOTSTRAP_DNS%% *}"
 uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
 uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
 uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
-uci set "https-dns-proxy.$sec.bootstrap_dns=$b_ip" || return 1
 uci set "https-dns-proxy.$sec.request_timeout=2" || return 1
 uci set "https-dns-proxy.$sec.dns_manager=1" || return 1
 record_own "doh" "$target" "$url" "slot=$slot;name=$name"
