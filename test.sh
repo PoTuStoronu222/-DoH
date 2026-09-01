@@ -1,21 +1,6 @@
 #!/bin/sh
-# ============================================================
-# DNS Manager v1.0 — Hybrid SmartDNS
-DNS Manager для OpenWrt 22.03+ / 23.05 / 24.x / 25.x
-# Первым делом читает реальное состояние роутера.
-#
-
-#   - DNS/DoH каталог 81 endpoint: чистые / безопасность / приватность / реклама / family / обход
-#   - NTP IP-first: Cloudflare / NIST / Google отдельным профилем /
-
-#   - Bootstrap DNS
-
-#   - ownership OURS / FOREIGN / UNKNOWN
-#   - управление только собственными объектами, чужие сохраняются
-
-# ============================================================
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="1.2-HYBRID"
+VERSION="1.7-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -64,6 +49,10 @@ err_msg() { log_msg "ERROR $*"; printf "${C_RED}[✗] %s${C_NC}\n" "$*"; }
 safe_read() { read -r "$@"; }
 confirm_action() {
     _prompt="$1"
+    if [ "${SILENT_APPLY:-0}" = 1 ]; then
+        log_msg "Автоматическое подтверждение: $_prompt"
+        return 0
+    fi
     printf "\n${C_WHITE}%s${C_NC}\n" "$_prompt"
     printf "  ${C_GREEN}[✓] Y / y  или  Н / н — Да, применить${C_NC}\n"
     printf "  ${C_RED}[✗] N / n  или  Т / т — Нет, назад${C_NC}\n"
@@ -76,7 +65,7 @@ confirm_action() {
         *) warn_msg "Неверный выбор. Используйте Y/Н — Да или N/Т — Нет."; return 1 ;;
     esac
 }
-pause() { printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
+pause() { [ "${SILENT_APPLY:-0}" = 1 ] && return 0; printf "\n${C_WHITE}Нажмите Enter...${C_NC}"; safe_read _dummy; }
 clear_screen() { command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'; printf '\033[1;37m'; }
 menu_header() {
 clear_screen
@@ -100,95 +89,135 @@ mkdir -p "$CFG_DIR" "$STATE_DIR" "$TMP_DIR" 2>/dev/null
 touch "$LOG_FILE" "$TX_LOG" "$OWNERSHIP" 2>/dev/null
 }
 write_catalogs() {
-if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=6.6-FINAL-HYBRID' "$DNS_CATALOG" 2>/dev/null; then
+if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# # DNSCATVER=8.1-RU' "$DNS_CATALOG" 2>/dev/null; then
 [ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
 cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=6.6-FINAL-HYBRID
+# DNSCATVER=8.1-RU
+#! Список кандидатов. Работоспособность проверяется с роутера.
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 
-# Runtime reachability MUST still be tested from the target OpenWrt router before recommendation/apply.
-# --- Обход блокировок / региональных ограничений ---
+cat > "$DNS_CATALOG" <<'EOF_DNS'
+# DNSCATVER=8.1-RU
+#! Список кандидатов. Работоспособность проверяется с роутера.
+# FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
+# --- Обход блокировок / региональных ограничений / сервисы ---
 mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
+mafioznik_xyz|bypass|geo+ai+services|Mafioznik DNS XYZ|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
 astracat|bypass|geo+ads+services|Astrakat DNS|https://dns.astrakat.ru/dns-query|ru/global|user-confirmed-current
+astracat_1498|bypass|geo+ads+services|AstraCat DNS :1498|https://dns.astrakat.ru:1498/dns-query|ru/global|runtime-check
+astracat_8443|bypass|geo+ads+services|AstraCat DNS :8443|https://dns.astrakat.ru:8443/dns-query|ru/global|runtime-check
 malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|verified-current
 xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|verified-current
 nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
 geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
+geohide_8443|bypass|geo+services|GeoHide DNS :8443|https://dns.geohide.ru:8443/dns-query|ru/global|runtime-check
 comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
+comss_bypass|bypass|geo+ai+security|Comss.one|https://dns.comss.one/dns-query|ru/global|verified-published-current
+comss_adblock_bypass|bypass|geo+ads+security|Comss.one Ad Filter|https://router.comss.one/dns-query|ru/global|verified-published-current
 vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|user-confirmed-current
-yandex_ru|regional|ru+su+rf|Yandex RU|https://common.dot.dns.yandex.net/dns-query|ru|verified-published-current
 dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
 paesa|bypass|geo+youtube|Paesa DNS|https://dns.paesa.es/dns-query|global|review-runtime
 anon_no|bypass|privacy+geo|Anon.no DNS|https://dns.anon.no/dns-query|norway|review-runtime
+bebas_unfiltered|bypass|uncensored|BebasDNS Unfiltered|https://dns.bebasid.com/unfiltered|id/global|source-listed
+dns4all|bypass|uncensored|DNS4all|https://doh.dns4all.eu/dns-query|eu/global|source-listed
+dns4eu_unfiltered|clean|unfiltered|DNS4EU Unfiltered|https://unfiltered.joindns4.eu/dns-query|eu|verified-published-current
+shecan|bypass|geo+services|Shecan DNS|https://free.shecan.ir/dns-query|ir/global|runtime-check
+# --- Региональные DNS ---
+yandex_ru|regional|ru+su+rf|Yandex RU|https://common.dot.dns.yandex.net/dns-query|ru|verified-published-current
+yandex_safe|regional|ru+su+rf|Yandex Safe|https://safe.dot.dns.yandex.net/dns-query|ru|runtime-check
+yandex_family|regional|ru+su+rf|Yandex Family|https://family.dot.dns.yandex.net/dns-query|ru|runtime-check
+# --- Чистые и публичные (Clean / Unfiltered) ---
 cloudflare_clean|clean|unfiltered|Cloudflare|https://cloudflare-dns.com/dns-query|global|verified-published-current
-cloudflare_security|security|malware|Cloudflare Security|https://security.cloudflare-dns.com/dns-query|global|verified-published-current
-cloudflare_family|family|malware+adult|Cloudflare Family|https://family.cloudflare-dns.com/dns-query|global|verified-published-current
 google_clean|clean|unfiltered|Google Public DNS|https://dns.google/dns-query|global|verified-published-current
-quad9_secure|security|malware+dnssec|Quad9 Secure|https://dns.quad9.net/dns-query|global|verified-published-current
 quad9_unfiltered|clean|unfiltered+dnssec|Quad9 Unsecured|https://dns10.quad9.net/dns-query|global|verified-published-current
-quad9_ecs|security|malware+ecs|Quad9 Secure ECS|https://dns11.quad9.net/dns-query|global|verified-published-current
-adguard_default|adblock|ads+tracking+phishing|AdGuard DNS|https://dns.adguard-dns.com/dns-query|global|verified-published-current
-adguard_family|family|ads+tracking+adult|AdGuard Family|https://family.adguard-dns.com/dns-query|global|verified-published-current
 adguard_unfiltered|clean|unfiltered|AdGuard Unfiltered|https://unfiltered.adguard-dns.com/dns-query|global|verified-published-current
+controld_p0|clean|unfiltered|Control D Unfiltered|https://freedns.controld.com/p0|global|verified-published-current
+controld_uncensored|clean|uncensored|Control D Uncensored|https://freedns.controld.com/uncensored|global|verified-published-current
+he_public|clean|unfiltered+anycast|Hurricane Electric Public Recursor|https://ordns.he.net/dns-query|global|verified-published-current
+18bit_cn|clean|unfiltered|18bit.cn|https://doh.18bit.cn/dns-query|asia|source-listed
+aa_dns|clean|unfiltered|Andrews & Arnold|https://dns.aa.net.uk/dns-query|uk/eu|source-listed
+aquilenet|clean|unfiltered+dnssec|Aquilenet DNS|https://dns.aquilenet.fr/dns-query|fr/eu|source-listed
+belnet|clean|unfiltered|Belnet DNS|https://dns.belnet.be/dns-query|be/eu|source-listed
+cynthia|clean|unfiltered|CynthiaLabs DNS|https://dns.cynthialabs.net/dns-query|global|source-listed
+digitalsize|clean|unfiltered+privacy|DigitalSize DNS|https://dns.digitalsize.net/dns-query|de/eu|source-listed
+doh_disconnect|clean|unfiltered|Disconnect DNS|https://doh.disconnect.app/dns-query|global|source-listed
+dnshome|clean|unfiltered|DNSHome|https://dns.dnshome.de/dns-query|de/eu|source-listed
+one_dns_pure|clean|unfiltered|OneDNS Pure|https://doh-pure.onedns.net/dns-query|asia|verified-published-current
+dns_pub|clean|unfiltered|DNSPod Public DNS|https://dns.pub/dns-query|cn/global|source-listed
+dns_fdn0|clean|unfiltered|FDN DNS 0|https://ns0.fdn.fr/dns-query|fr/eu|source-listed
+dns_fdn1|clean|unfiltered|FDN DNS 1|https://ns1.fdn.fr/dns-query|fr/eu|source-listed
+doh_lacontrevoie|clean|unfiltered|LaContreVoie DNS|https://doh.lacontrevoie.fr/dns-query|fr/eu|source-listed
+cznic_odvr_doh|clean|unfiltered|CZ.NIC ODVR DoH|https://odvr.nic.cz/doh|cz/eu|verified-published-current
+cznic_odvr_query|clean|unfiltered|CZ.NIC ODVR Query|https://odvr.nic.cz/dns-query|cz/eu|source-listed
+doh_seby|clean|unfiltered|Seby DNS|https://doh.seby.io/dns-query|global|source-listed
+dns_surfshark|clean|unfiltered|Surfshark DNS|https://dns.surfsharkdns.com/dns-query|global|source-listed
+hostux|clean|unfiltered|Hostux DNS|https://dns.hostux.net/dns-query|global|source-listed
+# --- Безопасность ---
+cloudflare_security|security|malware|Cloudflare Security|https://security.cloudflare-dns.com/dns-query|global|verified-published-current
+quad9_secure|security|malware+dnssec|Quad9 Secure|https://dns.quad9.net/dns-query|global|verified-published-current
+quad9_ecs|security|malware+ecs|Quad9 Secure ECS|https://dns11.quad9.net/dns-query|global|verified-published-current
+controld_p1|security|malware|Control D Malware|https://freedns.controld.com/p1|global|verified-published-current
+opendns_standard|security|phishing+malware|OpenDNS Standard|https://doh.opendns.com/dns-query|global|verified-published-current
+cleanbrowsing_security|security|phishing+malware|CleanBrowsing Security|https://doh.cleanbrowsing.org/doh/security-filter/|global|verified-published-current
+dns4eu_protective|security|malware+phishing|DNS4EU Protective|https://protective.joindns4.eu/dns-query|eu|verified-published-current
+cert_ee|security|malware+phishing|CERT-EE|https://dns.cert.ee/dns-query|estonia|verified-published-current
+cira_protected|security|malware+phishing|CIRA Protected|https://protected.canadianshield.cira.ca/dns-query|canada|verified-published-current
+one_dns_block|security|malware|OneDNS Block|https://doh.onedns.net/dns-query|asia|verified-published-current
+hagezi_root|security|ads+tracking+malware+phishing|HaGeZi Root|https://root.hagezi.org/dns-query|germany|verified-published-current
+hagezi_wurzn|security|ads+tracking+malware+phishing|HaGeZi Wurzn|https://wurzn.hagezi.org/dns-query|germany|verified-published-current
+hagezi_juuri|security|ads+tracking+malware+phishing|HaGeZi Juuri|https://juuri.hagezi.org/dns-query|finland|verified-published-current
+hagezi_ctif|security|threat-only|HaGeZi CTIF|https://ctif.hagezi.org/dns-query|germany|verified-published-current
+openbld_ada|security|ads+tracking+malware+phishing|OpenBLD ADA|https://ada.openbld.net/dns-query|global|verified-published-current
+openbld_ric|security|strict-filtering|OpenBLD RIC|https://ric.openbld.net/dns-query|global|verified-published-current
+dnsforge_strict|security|strict-filtering|dnsforge Strict|https://hard.dnsforge.de/dns-query|germany|verified-published-current
+dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
+nsec_arnor|security|malware+phishing|arnor.org|https://nsec.arnor.org/dns-query|global|source-listed
+# --- Приватность ---
 mullvad_clean|privacy|qname-minimization|Mullvad Clean|https://dns.mullvad.net/dns-query|global|verified-published-current
 mullvad_adblock|adblock|ads+tracking|Mullvad Adblock|https://adblock.dns.mullvad.net/dns-query|global|verified-published-current
 mullvad_base|security|ads+tracking+malware|Mullvad Base|https://base.dns.mullvad.net/dns-query|global|verified-published-current
 mullvad_extended|security|ads+tracking+malware+social|Mullvad Extended|https://extended.dns.mullvad.net/dns-query|global|verified-published-current
-mullvad_family|family|ads+tracking+malware+adult+gambling|Mullvad Family|https://family.dns.mullvad.net/dns-query|global|verified-published-current
-mullvad_all|family|ads+tracking+malware+adult+gambling+social|Mullvad All|https://all.dns.mullvad.net/dns-query|global|verified-published-current
-controld_p0|clean|unfiltered|Control D Unfiltered|https://freedns.controld.com/p0|global|verified-published-current
-controld_p1|security|malware|Control D Malware|https://freedns.controld.com/p1|global|verified-published-current
-controld_p2|adblock|ads+tracking|Control D Ads+Tracking|https://freedns.controld.com/p2|global|verified-published-current
-controld_p3|social|social|Control D Social|https://freedns.controld.com/p3|global|verified-published-current
-controld_family|family|family|Control D Family|https://freedns.controld.com/family|global|verified-published-current
-controld_uncensored|clean|uncensored|Control D Uncensored|https://freedns.controld.com/uncensored|global|verified-published-current
-opendns_standard|security|phishing+malware|OpenDNS Standard|https://doh.opendns.com/dns-query|global|verified-published-current
-opendns_family|family|adult|OpenDNS FamilyShield|https://doh.familyshield.opendns.com/dns-query|global|verified-published-current
-cleanbrowsing_security|security|phishing+malware|CleanBrowsing Security|https://doh.cleanbrowsing.org/doh/security-filter/|global|verified-published-current
-cleanbrowsing_adult|family|adult+malware|CleanBrowsing Adult|https://doh.cleanbrowsing.org/doh/adult-filter/|global|verified-published-current
-cleanbrowsing_family|family|adult+family|CleanBrowsing Family|https://doh.cleanbrowsing.org/doh/family-filter/|global|verified-published-current
 nextdns_fast|privacy|unfiltered|NextDNS|https://dns.nextdns.io|global|verified-published-current
 nextdns_anycast|privacy|anycast|NextDNS Anycast|https://anycast.dns.nextdns.io|global|verified-published-current
 dns_sb|privacy|dnssec+no-logging|DNS.SB|https://doh.dns.sb/dns-query|global|verified-published-current
 applied_privacy|privacy|privacy|Applied Privacy|https://doh.applied-privacy.net/query|europe|verified-published-current
 cznic_odvr|security|dnssec+privacy|CZ.NIC ODVR|https://odvr.nic.cz/doh|czechia|verified-published-current
 digitale_gesellschaft|privacy|privacy|Digitale Gesellschaft|https://dns.digitale-gesellschaft.ch/dns-query|switzerland|verified-published-current
-dns4eu_protective|security|malware+phishing|DNS4EU Protective|https://protective.joindns4.eu/dns-query|eu|verified-published-current
-dns4eu_child|family|child+malware|DNS4EU Child|https://child.joindns4.eu/dns-query|eu|verified-published-current
-dns4eu_noads|adblock|ads+malware|DNS4EU No Ads|https://noads.joindns4.eu/dns-query|eu|verified-published-current
-dns4eu_child_noads|family|child+ads|DNS4EU Child No Ads|https://child-noads.joindns4.eu/dns-query|eu|verified-published-current
-dns4eu_unfiltered|clean|unfiltered|DNS4EU Unfiltered|https://unfiltered.joindns4.eu/dns-query|eu|verified-published-current
-dns_for_family|family|adult|DNS for Family|https://dns-doh.dnsforfamily.com/dns-query|global|verified-published-current
-cert_ee|security|malware+phishing|CERT-EE|https://dns.cert.ee/dns-query|estonia|verified-published-current
 cira_private|privacy|unfiltered|CIRA Private|https://private.canadianshield.cira.ca/dns-query|canada|verified-published-current
-cira_protected|security|malware+phishing|CIRA Protected|https://protected.canadianshield.cira.ca/dns-query|canada|verified-published-current
-cira_family|family|adult+malware|CIRA Family|https://family.canadianshield.cira.ca/dns-query|canada|verified-published-current
-comss_bypass|bypass|geo+ai+security|Comss.one|https://dns.comss.one/dns-query|ru/global|verified-published-current
-comss_adblock_bypass|bypass|geo+ads+security|Comss.one Ad Filter|https://router.comss.one/dns-query|ru/global|verified-published-current
 libredns_clean|privacy|privacy|LibreDNS|https://doh.libredns.gr/dns-query|greece/eu|verified-published-current
-libredns_ads|adblock|ads|LibreDNS Ads|https://doh.libredns.gr/ads|greece/eu|verified-published-current
 switch_ch|privacy|privacy|SWITCH DNS|https://dns.switch.ch/dns-query|switzerland|verified-published-current
 wikimedia|privacy|anycast|Wikimedia DNS|https://wikimedia-dns.org/dns-query|global|verified-published-current
-one_dns_pure|clean|unfiltered|OneDNS Pure|https://doh-pure.onedns.net/dns-query|asia|verified-published-current
-one_dns_block|security|malware|OneDNS Block|https://doh.onedns.net/dns-query|asia|verified-published-current
-dnsguard|adblock|ads+tracking+malware|DNSGuard|https://dns.dnsguard.pub/dns-query|global|verified-published-current
-ffmuc|privacy|community|FFMUC|https://doh.ffmuc.net/dns-query|germany|verified-published-current
-hagezi_root|security|ads+tracking+malware+phishing|HaGeZi Root|https://root.hagezi.org/dns-query|germany|verified-published-current
-hagezi_wurzn|security|ads+tracking+malware+phishing|HaGeZi Wurzn|https://wurzn.hagezi.org/dns-query|germany|verified-published-current
-hagezi_juuri|security|ads+tracking+malware+phishing|HaGeZi Juuri|https://juuri.hagezi.org/dns-query|finland|verified-published-current
-nwps_standard|adblock|ads+tracking+malware|NWPS.fi Standard|https://public.ns.nwps.fi/dns-query|finland|verified-published-current
-nwps_kids|family|kids+ads+malware|NWPS.fi Kids|https://kids.ns.nwps.fi/dns-query|finland|verified-published-current
-oszx|adblock|ads|OSZX DNS|https://dns.oszx.co/dns-query|france|verified-published-current
 pumplex|privacy|no-ads+dnssec|PumpleX|https://dns.pumplex.com/dns-query|france|verified-published-current
-openbld_ada|security|ads+tracking+malware+phishing|OpenBLD ADA|https://ada.openbld.net/dns-query|global|verified-published-current
-openbld_ric|security|strict-filtering|OpenBLD RIC|https://ric.openbld.net/dns-query|global|verified-published-current
 dnsforge|privacy|privacy|dnsforge|https://dnsforge.de/dns-query|germany|verified-published-current
+ffmuc|privacy|community|FFMUC|https://doh.ffmuc.net/dns-query|germany|verified-published-current
+# --- Блокировка рекламы ---
+adguard_default|adblock|ads+tracking+phishing|AdGuard DNS|https://dns.adguard-dns.com/dns-query|global|verified-published-current
+controld_p2|adblock|ads+tracking|Control D Ads+Tracking|https://freedns.controld.com/p2|global|verified-published-current
+dns4eu_noads|adblock|ads+malware|DNS4EU No Ads|https://noads.joindns4.eu/dns-query|eu|verified-published-current
+libredns_ads|adblock|ads|LibreDNS Ads|https://doh.libredns.gr/ads|greece/eu|verified-published-current
+dnsguard|adblock|ads+tracking+malware|DNSGuard|https://dns.dnsguard.pub/dns-query|global|verified-published-current
+nwps_standard|adblock|ads+tracking+malware|NWPS.fi Standard|https://public.ns.nwps.fi/dns-query|finland|verified-published-current
+oszx|adblock|ads|OSZX DNS|https://dns.oszx.co/dns-query|france|verified-published-current
+angry_im|adblock|ads|Angry.im|https://doh.angry.im/dns-query|global|source-listed
+dns_bebas_default|adblock|ads+malware+phishing|BebasDNS|https://dns.bebasid.com/dns-query|id/global|source-listed
+blokada|adblock|privacy|Blokada DNS|https://dns.blokada.org/dns-query|global|source-listed
+# --- Семейная защита ---
+cloudflare_family|family|malware+adult|Cloudflare Family|https://family.cloudflare-dns.com/dns-query|global|verified-published-current
+adguard_family|family|ads+tracking+adult|AdGuard Family|https://family.adguard-dns.com/dns-query|global|verified-published-current
+mullvad_family|family|ads+tracking+malware+adult+gambling|Mullvad Family|https://family.dns.mullvad.net/dns-query|global|verified-published-current
+mullvad_all|family|ads+tracking+malware+adult+gambling+social|Mullvad All|https://all.dns.mullvad.net/dns-query|global|verified-published-current
+controld_p3|social|social|Control D Social|https://freedns.controld.com/p3|global|verified-published-current
+controld_family|family|family|Control D Family|https://freedns.controld.com/family|global|verified-published-current
+opendns_family|family|adult|OpenDNS FamilyShield|https://doh.familyshield.opendns.com/dns-query|global|verified-published-current
+cleanbrowsing_adult|family|adult+malware|CleanBrowsing Adult|https://doh.cleanbrowsing.org/doh/adult-filter/|global|verified-published-current
+cleanbrowsing_family|family|adult+family|CleanBrowsing Family|https://doh.cleanbrowsing.org/doh/family-filter/|global|verified-published-current
+dns4eu_child|family|child+malware|DNS4EU Child|https://child.joindns4.eu/dns-query|eu|verified-published-current
+dns4eu_child_noads|family|child+ads|DNS4EU Child No Ads|https://child-noads.joindns4.eu/dns-query|eu|verified-published-current
+dns_for_family|family|adult|DNS for Family|https://dns-doh.dnsforfamily.com/dns-query|global|verified-published-current
+cira_family|family|adult+malware|CIRA Family|https://family.canadianshield.cira.ca/dns-query|canada|verified-published-current
+nwps_kids|family|kids+ads+malware|NWPS.fi Kids|https://kids.ns.nwps.fi/dns-query|finland|verified-published-current
 iijjp|family|child-protection|IIJ.JP DNS|https://public.dns.iij.jp/dns-query|japan|verified-published-current
-he_public|clean|unfiltered+anycast|Hurricane Electric Public Recursor|https://ordns.he.net/dns-query|global|verified-published-current
 dnsforge_youth|family|youth-protection|dnsforge Youth Protection|https://clean.dnsforge.de/dns-query|germany|verified-published-current
-dnsforge_strict|security|strict-filtering|dnsforge Strict|https://hard.dnsforge.de/dns-query|germany|verified-published-current
-hagezi_ctif|security|threat-only|HaGeZi CTIF|https://ctif.hagezi.org/dns-query|germany|verified-published-current
-dnsbunker|security|balanced-threat|DNSBUNKER Pro+TIF|https://dnsbunker.org/dns-query|germany|verified-published-current
 EOF_DNS
 fi
 if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FINAL-HYBRID' "$NTP_CATALOG" 2>/dev/null; then
@@ -260,6 +289,7 @@ _had_dns_profile=0
 : "${TLD_RU_ENABLED:=1}"; : "${BLOCK_QUIC:=0}"; : "${MTU_FIX:=0}"; : "${FORCE_DOH:=0}"
 : "${NTP_IP_FALLBACK:=1}"; : "${SYSCTL_TUNING:=0}"; : "${GO_OPTIMIZE:=0}"; : "${DNSMASQ_PERF:=0}"; : "${NTP_CLIENTS:=0}"; : "${CLIENT_FIXES:=0}"; : "${SYSCTL_EXTENDED:=0}"; : "${TAILSCALE_HOTPLUG:=0}"; : "${CRON_CLEANUP:=0}"
 : "${BALANCER_ENABLED:=1}"; : "${NTP_PRESET:=cf_ip}"; : "${DNS_PROFILE:=hybrid}"
+: "${WATCHDOG_ENABLED:=0}"; : "${WATCHDOG_INTERVAL:=15}"
 TLD_SPLIT="$TLD_RU_ENABLED"
 if [ "$_had_dns_profile" = 0 ] && [ -z "$DNS_PROFILE" ]; then
 DNS_PROFILE="hybrid"
@@ -301,6 +331,8 @@ CRON_CLEANUP="$CRON_CLEANUP"
 BALANCER_ENABLED="$BALANCER_ENABLED"
 NTP_PRESET="$NTP_PRESET"
 DNS_PROFILE="$DNS_PROFILE"
+WATCHDOG_ENABLED="$WATCHDOG_ENABLED"
+WATCHDOG_INTERVAL="$WATCHDOG_INTERVAL"
 EOF_CFG
 }
 # ----- Discovery -----
@@ -392,16 +424,13 @@ HAS_BYEDPI="$OTHER_BYEDPI"
 HAS_TAILSCALE="$OTHER_TAILSCALE"
 }
 disc_firewall() {
-QUIC_OURS=0; QUIC_FOREIGN=0
-if uci show firewall 2>/dev/null | grep -q "name='DnsMgr_QUIC_"; then
-QUIC_OURS=1
-fi
-if uci show firewall 2>/dev/null | grep -q "name='Block_UDP_80'" && \
-uci show firewall 2>/dev/null | grep -q "name='Block_UDP_443'"; then
-QUIC_FOREIGN=1
-fi
-[ "$(uci -q get firewall.@defaults[0].flow_offloading 2>/dev/null)" = 1 ] && FLOW_OFFLOAD="yes" || FLOW_OFFLOAD="no"
-if command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then NFT_ACTIVE="yes"; else NFT_ACTIVE="no"; fi
+    QUIC_OURS=0
+    QUIC_FOREIGN=0
+    if uci show firewall 2>/dev/null | grep -q "name='Block_UDP_80'" ||        uci show firewall 2>/dev/null | grep -q "name='Block_UDP_443'"; then
+        QUIC_OURS=1
+    fi
+    [ "$(uci -q get firewall.@defaults[0].flow_offloading 2>/dev/null)" = 1 ] && FLOW_OFFLOAD="yes" || FLOW_OFFLOAD="no"
+    if command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then NFT_ACTIVE="yes"; else NFT_ACTIVE="no"; fi
 }
 run_discovery() {
 init_dirs
@@ -441,7 +470,7 @@ for bs in $(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' '); do
 if [ "$HAS_DIG" = yes ]; then
 ipx="$(dig +short "@$bs" "$host" A +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
 elif command -v nslookup >/dev/null 2>&1; then
-ipx="$(nslookup "$host" "$bs" 2>/dev/null | awk '/^Address: /{print $2}' | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
+ipx="$(nslookup "$host" "$bs" 2>/dev/null | awk '/^Address[ 0-9]*: / {print $NF}' | awk '/^[0-9]+(\.[0-9]+){3}$/ {print;exit}')"
 else
 ipx=""
 fi
@@ -455,7 +484,7 @@ ipx=""
 if [ "$HAS_DIG" = yes ]; then
 ipx="$(dig +short "$host" A +time=3 +tries=1 2>/dev/null | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
 elif command -v nslookup >/dev/null 2>&1; then
-ipx="$(nslookup "$host" 2>/dev/null | awk '/^Address: /{print $2}' | awk '/^[0-9]+(\.[0-9]+){3}$/{print;exit}')"
+ipx="$(nslookup "$host" 2>/dev/null | awk '/^Address[ 0-9]*: / {print $NF}' | awk '/^[0-9]+(\.[0-9]+){3}$/ {print;exit}')"
 fi
 [ -n "$ipx" ] && { echo "$ipx"; return 0; }
 return 1
@@ -463,19 +492,19 @@ return 1
 # ----- DNS tester -----
 test_one_dns() {
 id="$1"; url="$(normalize_url "$(dns_url "$id")")"; name="$(dns_name "$id")"; cat="$(dns_cat "$id")"
-host="$(printf '%s' "$url" | sed 's#^https://##; s#/.*$##')"
+host="$(url_host "$url")"
+port="$(url_port "$url")"
 ipx="$(resolve_host "$host")"
 [ -n "$ipx" ] || { printf '%s|%s|%s|-1|BOOTSTRAP_FAIL\n' "$id" "$cat" "$name" > "$TMP_DIR/t.$id"; return; }
 q="$TMP_DIR/q.$id"; body="$TMP_DIR/body.$id"; hdr="$TMP_DIR/h.$id"
 : > "$body"; : > "$hdr"
-# RFC 8484 wire query: example.com A/IN
 printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$q"
 result="$(curl -sS -o "$body" -D "$hdr" -w '%{http_code}|%{time_total}|%{errormsg}' \
---connect-timeout 3 --max-time 6 --resolve "$host:443:$ipx" \
+--connect-timeout 3 --max-time 6 --resolve "$host:$port:$ipx" \
 -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' \
 --data-binary "@$q" "$url" 2>/dev/null)"
 code="${result%%|*}"; rest="${result#*|}"; tim="${rest%%|*}"; err="${rest#*|}"
-[ "$code" = "$result" ] && code="000"
+[ -z "$code" ] && code="000"
 bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"; [ -n "$bytes" ] || bytes=0
 ctype="$(awk -F': *' 'tolower($1)=="content-type"{print tolower($2)}' "$hdr" 2>/dev/null | tail -n1 | tr -d '\r')"
 case "$tim" in ''|0) ms=-1;; *) ms="$(awk -v t="$tim" 'BEGIN{v=t*1000; if(v<1)v=1; printf "%.0f", v}')";; esac
@@ -565,8 +594,8 @@ RU_2) printf '%s' "5060";;
 esac
 }
 hybrid_prepare_selection() {
-# Do not overwrite a user's explicit Hybrid slot selection.
-# Only fill defaults when the profile is truly empty.
+# Явно выбранные пользователем слоты не перезаписываются.
+# Значения по умолчанию используются только для пустого профиля.
 if [ -z "$SLOT_1$SLOT_2$SLOT_3$SLOT_4$SLOT_5$SLOT_6$SLOT_RU" ]; then
 hybrid_set_defaults
 else
@@ -577,7 +606,7 @@ PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
 PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
 [ -n "$SLOT_RU" ] && PORT_RU="$HYBRID_PORT_RU"
 fi
-# Hybrid's primary profile is based on the six preferred endpoints.
+# Основной профиль использует шесть общих DNS и отдельный российский DNS.
 
 if [ "${HYBRID_AUTO_REPAIR:-0}" = 1 ] && [ -s "$TEST_RESULTS" ]; then
 : > "$TMP_DIR/hybrid-used"
@@ -633,7 +662,7 @@ printf "\n${C_CYAN}RU-маршрут:${C_NC}\n"
 printf "  ${C_YELLOW}%s${C_NC}  %-28s  .ru / .su / .рф\n" "$HYBRID_PORT_RU" "$(dns_name "$SLOT_RU")"
 fi
 printf "\n${C_WHITE}Режим общего DNS:${C_NC} allservers=1 → dnsmasq отправляет запросы всем 6 DoH и использует первый успешный ответ.\n"
-printf "${C_WHITE}RU:${C_NC} домены .ru/.su/.рф идут только в отдельный RU upstream.\n"
+printf "${C_WHITE}RU:${C_NC} домены .ru/.su/.рф идут только в отдельный российский DNS.\n"
 printf "${C_YELLOW}[1]${C_NC} ⚡ Автоматически настроить Hybrid SmartDNS\n"
 printf "${C_YELLOW}[2]${C_NC} 🧪 Проверить 6 DoH + Yandex\n"
 printf "${C_YELLOW}[3]${C_NC} 🔧 Изменить слоты вручную\n"
@@ -772,6 +801,24 @@ p=$((p+1))
 done
 return 1
 }
+clear_all_doh_for_apply() {
+    printf "${C_PINK}↻ Все существующие DoH будут удалены и заменены выбранной схемой.${C_NC}\n"
+    _i=0
+    _removed=0
+    while uci -q get "https-dns-proxy.@https-dns-proxy[$_i]" >/dev/null 2>&1; do
+        _u="$(uci -q get "https-dns-proxy.@https-dns-proxy[$_i].resolver_url" 2>/dev/null)"
+        [ -n "$_u" ] && printf "  ${C_PINK}↻ Удаляется DoH: %s${C_NC}\n" "$_u"
+        uci -q delete "https-dns-proxy.@https-dns-proxy[$_i]" || return 1
+        _removed=$((_removed+1))
+    done
+    uci commit https-dns-proxy || return 1
+    : > "$DOH_INV"
+    DOH_TOTAL=0
+    DOH_OURS=0
+    DOH_FOREIGN=0
+    DOH_UNKNOWN=0
+    printf "${C_GREEN}✓ Старых DoH удалено: %s. Будет создана только выбранная схема.${C_NC}\n" "$_removed"
+}
 record_own() { printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" >> "$OWNERSHIP"; }
 ensure_doh_slot() {
 slot="$1"; id="$2"; [ -n "$id" ] || return 0
@@ -848,9 +895,9 @@ fi
 local sec
 sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
 # Берем только первый IP-адрес на случай, если там несколько через пробел
-local b_ip="${BOOTSTRAP_DNS%% *}"
-[ -z "$b_ip" ] && b_ip="1.1.1.1" # Дефолтный страховочный IP
-uci set "https-dns-proxy.$sec.listen_addr=127.0.0.1" || return 1
+local b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
+[ -z "$b_list" ] && b_list="1.1.1.1"
+uci set "https-dns-proxy.$sec.bootstrap_dns=$b_list" || return 1
 uci set "https-dns-proxy.$sec.listen_port=$target" || return 1
 uci set "https-dns-proxy.$sec.resolver_url=$url" || return 1
 uci set "https-dns-proxy.$sec.request_timeout=2" || return 1
@@ -920,7 +967,7 @@ validate_selected_slots() {
         _u="$(normalize_url "$(dns_url "$_id")")"
         [ -n "$_u" ] || { err_msg "Слот $s содержит DNS без URL."; return 1; }
         if grep -qxF "$_u" "$_urls" 2>/dev/null; then
-            err_msg "Один и тот же DoH endpoint выбран несколько раз: $(dns_name "$_id")."
+            err_msg "Один и тот же адрес DoH-сервера выбран несколько раз: $(dns_name "$_id")."
             return 1
         fi
         printf '%s\n' "$_u" >> "$_urls"
@@ -928,7 +975,7 @@ validate_selected_slots() {
     return 0
 }
 get_dnsmasq_section() {
-# Prefer a dnsmasq instance explicitly attached to LAN.
+# В первую очередь используется dnsmasq, привязанный к LAN.
 _secs="$(uci show dhcp 2>/dev/null | sed -n 's/^dhcp\.\([^.=]*\)=dnsmasq$/\1/p')"
 for _s in $_secs; do
 _iface="$(uci -q get "dhcp.$_s.interface" 2>/dev/null)"
@@ -946,14 +993,16 @@ reconcile_dnsmasq() {
     sec="$(get_dnsmasq_section)"
     uci -q get "dhcp.$sec" >/dev/null 2>&1 || return 1
     # Сохраняем прежние upstream и связанные параметры для функции «удалить изменения DNS Manager».
-    {
-        printf 'SERVER\n'
-        uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n'
-        printf 'ALLSERVERS=%s\n' "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)"
-        printf 'STRICTORDER=%s\n' "$(uci -q get "dhcp.$sec.strictorder" 2>/dev/null)"
-        printf 'NORESOLV=%s\n' "$(uci -q get "dhcp.$sec.noresolv" 2>/dev/null)"
-        printf 'SECTION=%s\n' "$sec"
-    } > "$PREV_DNSMASQ" 2>/dev/null || true
+    [ -s "$PREV_DNSMASQ" ] || {
+  {
+    printf 'SERVER\n'
+    uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n'
+    printf 'ALLSERVERS=%s\n' "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)"
+    printf 'STRICTORDER=%s\n' "$(uci -q get "dhcp.$sec.strictorder" 2>/dev/null)"
+    printf 'NORESOLV=%s\n' "$(uci -q get "dhcp.$sec.noresolv" 2>/dev/null)"
+    printf 'SECTION=%s\n' "$sec"
+  } > "$PREV_DNSMASQ" 2>/dev/null || true
+}
 
     while uci -q delete "dhcp.$sec.server" >/dev/null 2>&1; do :; done
     for s in 1 2 3 4 5 6; do
@@ -994,33 +1043,33 @@ reconcile_dnsmasq() {
 
 apply_quic() {
     [ "$BLOCK_QUIC" = 1 ] || return 0
-    if [ "$QUIC_OURS" = 1 ]; then
-        printf "  ${C_GREEN}= QUIC: правила DNS Manager уже существуют.${C_NC}\n"
-        return 0
-    fi
-    if [ "$QUIC_FOREIGN" = 1 ]; then
-        printf "  ${C_YELLOW}⚠ QUIC уже блокируется сторонним правилом. Свои правила не добавляются.${C_NC}\n"
-        return 0
-    fi
+
+    for _rname in Block_UDP_80 Block_UDP_443; do
+        while :; do
+            _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
+            [ -n "$_ridx" ] || break
+            uci -q delete "firewall.$_ridx" || return 1
+        done
+    done
+
     uci add firewall rule >/dev/null 2>&1 || return 1
-    uci set firewall.@rule[-1].name='DnsMgr_QUIC_80' || return 1
+    uci set firewall.@rule[-1].name='Block_UDP_80' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
     uci set firewall.@rule[-1].dest_port='80' || return 1
     uci set firewall.@rule[-1].target='REJECT' || return 1
+
     uci add firewall rule >/dev/null 2>&1 || return 1
-    uci set firewall.@rule[-1].name='DnsMgr_QUIC_443' || return 1
+    uci set firewall.@rule[-1].name='Block_UDP_443' || return 1
     uci add_list firewall.@rule[-1].proto='udp' || return 1
     uci set firewall.@rule[-1].src='lan' || return 1
     uci set firewall.@rule[-1].dest='wan' || return 1
     uci set firewall.@rule[-1].dest_port='443' || return 1
     uci set firewall.@rule[-1].target='REJECT' || return 1
-    uci commit firewall || return 1
-    record_own "firewall" "name" "DnsMgr_QUIC_80" "created"
-    record_own "firewall" "name" "DnsMgr_QUIC_443" "created"
-}
 
+    uci commit firewall || return 1
+}
 apply_sysctl() {
 [ "$SYSCTL_TUNING" = 1 ] || return 0
 f="/etc/sysctl.d/90-dns-manager.conf"
@@ -1038,6 +1087,88 @@ grep -q "^${key}=${val}$" "$f" 2>/dev/null || printf '%s\n' "$p" >> "$f"
 sysctl -w "$p" >/dev/null 2>&1 || warn_msg "Не удалось применить $p"
 record_own "sysctl" "$key" "$val" "before=${before:-unknown}"
 done
+}
+remove_sysctl_base() {
+    f="/etc/sysctl.d/90-dns-manager.conf"
+    sf="$STATE_DIR/sysctl-before.conf"
+    [ -f "$f" ] || return 0
+    for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
+        old="$(awk -F'|' -v k="$kv" '$1==k{print $2;exit}' "$sf" 2>/dev/null)"
+        [ -n "$old" ] && [ "$old" != unknown ] && sysctl -w "$kv=$old" >/dev/null 2>&1 || true
+    done
+    rm -f "$f" "$sf"
+}
+remove_go_optimize() {
+    for f in /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale; do
+        bak="$f.dns-manager.bak"
+        [ -f "$bak" ] || continue
+        curh="$(file_hash "$f")"
+        managedh="$(cat "$STATE_DIR/$(basename "$f").managed.sha256" 2>/dev/null)"
+        if [ -n "$managedh" ] && [ -n "$curh" ] && [ "$curh" != "$managedh" ]; then
+            warn_msg "Не восстанавливаю $f: файл изменён вручную после настройки."
+            continue
+        fi
+        mv "$bak" "$f" 2>/dev/null || continue
+        rm -f "$STATE_DIR/$(basename "$f").managed.sha256"
+    done
+}
+reload_fw() {
+    if [ "$SYS_FW" = fw4 ]; then
+        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+    else
+        /etc/init.d/firewall restart >/dev/null 2>&1
+    fi
+}
+apply_extras_now() {
+    case "$1" in
+        balance|tld)
+            reconcile_dnsmasq || return 1
+            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
+            ;;
+        ntp)
+            [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback || true
+            ;;
+        quic)
+            apply_quic_toggle || return 1
+            ;;
+        mtu)
+            apply_mtu_toggle || return 1
+            ;;
+        sysctl)
+            if [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl; else remove_sysctl_base; fi
+            ;;
+        go)
+            if [ "$GO_OPTIMIZE" = 1 ]; then apply_go; else remove_go_optimize; fi
+            ;;
+        force)
+            if [ "$FORCE_DOH" = 1 ]; then apply_dns_force; else remove_dns_force; fi
+            reload_fw
+            ;;
+        ntp_clients)
+            if [ "$NTP_CLIENTS" = 1 ]; then apply_ntp_clients; else remove_ntp_clients; fi
+            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
+            reload_fw
+            ;;
+        dnsmasq_perf)
+            if [ "$DNSMASQ_PERF" = 1 ]; then apply_dnsmasq_perf; else remove_dnsmasq_perf; fi
+            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
+            ;;
+        client_fixes)
+            if [ "$CLIENT_FIXES" = 1 ]; then apply_client_fixes; else remove_client_fixes; fi
+            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
+            ;;
+        sysctl_ext)
+            if [ "$SYSCTL_EXTENDED" = 1 ]; then apply_sysctl_extended; else remove_sysctl_extended; fi
+            ;;
+        ts_hotplug)
+            if [ "$TAILSCALE_HOTPLUG" = 1 ]; then apply_tailscale_hotplug; else remove_tailscale_hotplug; fi
+            ;;
+        cron)
+            if [ "$CRON_CLEANUP" = 1 ]; then cleanup_manager_cron; fi
+            ;;
+    esac
+    run_discovery
+    save_config
 }
 apply_go() {
 [ "$GO_OPTIMIZE" = 1 ] || return 0
@@ -1181,10 +1312,15 @@ remove_sysctl_extended() {
     rm -f "$f" "$sf"
 }
 apply_tailscale_hotplug() {
-    [ "${TAILSCALE_HOTPLUG:-0}" = 1 ] || return 0
-    [ -x /etc/init.d/tailscale ] || { warn_msg "Tailscale не установлен — hotplug не создаётся."; return 0; }
-    f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
-    cat > "$f.tmp" <<'EOF_HOT'
+[ "${TAILSCALE_HOTPLUG:-0}" = 1 ] || return 0
+f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
+mkdir -p /etc/hotplug.d/iface 2>/dev/null
+# Если на нашем месте лежит старый скрипт без нашей метки — сохраняем копию.
+if [ -f "$f" ] && ! grep -q '^# DNS_MANAGER_TAILSCALE_HOTPLUG=1$' "$f" 2>/dev/null; then
+cp -p "$f" "$f.previous" 2>/dev/null
+info_msg "Старый скрипт $f сохранён в $f.previous"
+fi
+cat > "$f.tmp" <<'EOF_HOT'
 #!/bin/sh
 # DNS_MANAGER_TAILSCALE_HOTPLUG=1
 [ "$ACTION" = ifup ] || exit 0
@@ -1198,15 +1334,29 @@ NOW="$(date +%s)"; START="$(cat "$MARK" 2>/dev/null)"
 [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale restart >/dev/null 2>&1 || true
 rm -f "$MARK"
 EOF_HOT
-    mv "$f.tmp" "$f" || return 1
-    chmod 755 "$f"
-    date +%s > "$STATE_DIR/tailscale-hotplug-window" 2>/dev/null || true
-    record_own "file" "$f" "created" "tailscale-hotplug"
+mv "$f.tmp" "$f" || return 1
+chmod 755 "$f"
+date +%s > "$STATE_DIR/tailscale-hotplug-window" 2>/dev/null || true
+record_own "file" "$f" "created" "tailscale-hotplug"
+if [ -x /etc/init.d/tailscale ]; then
+ok_msg "Hotplug-скрипт Tailscale установлен."
+else
+info_msg "Tailscale сейчас не установлен — скрипт уже лежит и заработает сразу после установки Tailscale."
+fi
 }
 remove_tailscale_hotplug() {
-    f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
-    if grep -q '^# DNS_MANAGER_TAILSCALE_HOTPLUG=1$' "$f" 2>/dev/null; then rm -f "$f"; fi
-    rm -f "$STATE_DIR/tailscale-hotplug-window"
+f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
+# Путь 99-dns-manager-* — наша зона имён: любой файл здесь считается
+# артефактом DNS Manager (включая старые версии) и удаляется при выключении.
+if [ -f "$f" ]; then
+rm -f "$f"
+if [ -f "$f.previous" ]; then
+ok_msg "Hotplug-скрипт Tailscale удалён. Старая копия: $f.previous"
+else
+ok_msg "Hotplug-скрипт Tailscale удалён."
+fi
+fi
+rm -f "$STATE_DIR/tailscale-hotplug-window"
 }
 cleanup_manager_cron() {
     [ "${CRON_CLEANUP:-0}" = 1 ] || return 0
@@ -1261,7 +1411,7 @@ remove_dns_force() {
 apply_bogus() {
 clear_screen
 printf "${C_RED}=== IP-заглушки / bogus-nxdomain ===${C_NC}\n"
-printf "Каталог — это список кандидатов. Применяйте только подтверждённые для вашего upstream IP.\n"
+printf "Каталог содержит адреса для проверки. Применяйте только подтверждённые для вашего DNS-источника IP.\n"
 n=1
 while IFS='|' read -r id typ ip desc conf status; do
 case "$id" in ''|\#*) continue;; esac
@@ -1323,7 +1473,8 @@ verify_doh_endpoint() {
     _port="$(url_port "$_url")"
     _ip="$(resolve_host "$_host")"
     [ -n "$_ip" ] || { err_msg "DoH «$_name»: не удалось определить адрес $_host."; return 1; }
-    _q="$TMP_DIR/verify-q.$$"; _b="$TMP_DIR/verify-b.$$"; _h="$TMP_DIR/verify-h.$$"
+    _suffix="$$-$(date +%s%N | cut -c1-8)"
+    _q="$TMP_DIR/verify-q.$_suffix"; _b="$TMP_DIR/verify-b.$_suffix"; _h="$TMP_DIR/verify-h.$_suffix"
     printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$_q"
     _res="$(curl -sS -o "$_b" -D "$_h" -w '%{http_code}|%{errormsg}' --connect-timeout 3 --max-time 6 --resolve "$_host:$_port:$_ip" -H 'Content-Type: application/dns-message' -H 'Accept: application/dns-message' --data-binary "@$_q" "$_url" 2>/dev/null)"
     _code="${_res%%|*}"
@@ -1331,10 +1482,10 @@ verify_doh_endpoint() {
     _ctype="$(awk -F': *' 'tolower($1)=="content-type"{print tolower($2)}' "$_h" 2>/dev/null | tail -n1 | tr -d '\r')"
     rm -f "$_q" "$_b" "$_h"
     [ "$_code" = 200 ] && [ "$_bytes" -ge 12 ] && printf '%s' "$_ctype" | grep -q 'application/dns-message' || {
-        err_msg "DoH «$_name»: endpoint не подтвердил корректный DNS-over-HTTPS ответ (HTTPS $_code)."
+        err_msg "DoH «$_name»: адрес сервера не подтвердил корректный ответ DNS-over-HTTPS (HTTPS $_code)."
         return 1
     }
-    printf "${C_GREEN}✓ DoH endpoint подтверждён: %s${C_NC}\n" "$_name"
+    printf "${C_GREEN}✓ Адрес DoH-сервера подтверждён: %s${C_NC}\n" "$_name"
     return 0
 }
 verify_selected_doh() {
@@ -1444,8 +1595,7 @@ while IFS='|' read -r f key existed; do
 cur="$(file_hash "$f")"
 before="$(cat "$TX_DIR/$key.before" 2>/dev/null)"
 after="$(cat "$TX_DIR/$key.after" 2>/dev/null)"
-# If we captured the post-apply hash, restore only when the file
-# still equals the exact state created by this transaction.
+# Файл восстанавливается только если после применения его никто не менял.
 if [ -n "$after" ] && [ "$cur" != "$after" ]; then
 warn_msg "Не откатываю $f: обнаружено изменение после применения. Чужие изменения сохранены. Проверьте конфигурацию вручную."
 continue
@@ -1554,13 +1704,14 @@ printf "\n${C_WHITE}Дополнительные модули:${C_NC}\n"
 [ "$SYSCTL_EXTENDED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Расширенный sysctl + conntrack\n" || printf "  ${C_YELLOW}—${C_NC} Расширенный sysctl не изменяется\n"
 [ "$TAILSCALE_HOTPLUG" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Tailscale hotplug после NTP\n" || printf "  ${C_YELLOW}—${C_NC} Tailscale hotplug не изменяется\n"
 [ "$CRON_CLEANUP" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Чистка старых cron-задач DNS Manager\n" || printf "  ${C_YELLOW}—${C_NC} Cron не изменяется\n"
+[ "$WATCHDOG_ENABLED" = 1 ] && printf "  ${C_GREEN}✓${C_NC} Автопроверка DoH: каждые %s мин\n" "$WATCHDOG_INTERVAL" || printf "  ${C_YELLOW}—${C_NC} Автопроверка DoH не изменяется\n"
 fi
 printf "\n${C_WHITE}Текущее состояние до применения:${C_NC}\n"
 printf "  dnsmasq: %b\n" "$(state_word "$DNSMASQ_RUN")"
-printf "  DoH: %s (наших %s / чужих %s / неизвестных %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
-if [ "$DOH_FOREIGN" -gt 0 ] || [ "$DOH_UNKNOWN" -gt 0 ]; then
-printf "  ${C_YELLOW}⚠ Обнаружены чужие или неизвестные DoH. Они не будут изменены.${C_NC}\n"
-printf "  ${C_YELLOW}   Общий https-dns-proxy может кратко перезапуститься.${C_NC}\n"
+printf "  DoH: %s (настройка %s / внешние %s / без определения %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
+if [ "$DOH_TOTAL" -gt 0 ]; then
+printf "  ${C_PINK}↻ Найденные DoH после подтверждения будут заменены выбранной схемой DNS Manager.${C_NC}\n"
+printf "  ${C_YELLOW}   До изменения создаётся снимок для автоматического отката при ошибке.${C_NC}\n"
 fi
 printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
 printf "${C_YELLOW}ℹ Если желаемый порт занят чужим сервисом, слот уедет на ближайший свободный — итог будет показан после применения.${C_NC}\n"
@@ -1575,10 +1726,9 @@ if [ "$DOH_TOTAL" -gt 0 ] || [ "$DNS_PROFILE" = hybrid ]; then
 /etc/init.d/https-dns-proxy stop >/dev/null 2>&1 || true
 sleep 3
 fi
-reconcile_selected_own_doh || { err_msg "Не удалось согласовать собственные DoH-секции."; tx_restore_on_failure; return 1; }
+clear_all_doh_for_apply || { err_msg "Не удалось удалить старый слой DoH."; tx_restore_on_failure; return 1; }
 disc_listeners
 disc_dns
-repair_duplicate_own_doh_ports
 if [ "$DNS_PROFILE" = hybrid ]; then
 TX_RESERVED_PORTS=""
 for s in 1 2 3 4 5 6; do
@@ -1615,7 +1765,7 @@ if [ "$CORE_ONLY" != 1 ] && [ "$NTP_CLIENTS" = 1 ]; then apply_ntp_clients || { 
 if [ "$CORE_ONLY" != 1 ] && [ "$DNSMASQ_PERF" = 1 ]; then apply_dnsmasq_perf || { err_msg "Не удалось настроить производительность dnsmasq."; tx_restore_on_failure; return 1; }; fi
 if [ "$CORE_ONLY" != 1 ] && [ "$CLIENT_FIXES" = 1 ]; then apply_client_fixes || { err_msg "Не удалось применить клиентские DNS-фиксы."; tx_restore_on_failure; return 1; }; fi
 if [ "$CORE_ONLY" != 1 ] && [ "$SYSCTL_EXTENDED" = 1 ]; then apply_sysctl_extended || { err_msg "Не удалось применить расширенный sysctl."; tx_restore_on_failure; return 1; }; fi
-if [ "$CORE_ONLY" != 1 ] && [ "$TAILSCALE_HOTPLUG" = 1 ]; then apply_tailscale_hotplug || { err_msg "Не удалось установить Tailscale hotplug."; tx_restore_on_failure; return 1; }; fi
+if [ "$CORE_ONLY" != 1 ] && [ "$TAILSCALE_HOTPLUG" = 1 ]; then apply_tailscale_hotplug || { err_msg "Не удалось настроить автоматический запуск Tailscale."; tx_restore_on_failure; return 1; }; fi
 if [ "$CORE_ONLY" != 1 ] && [ "$CRON_CLEANUP" = 1 ]; then cleanup_manager_cron || { err_msg "Не удалось очистить cron DNS Manager."; tx_restore_on_failure; return 1; }; fi
 tx_snapshot_after_apply
 sleep 1
@@ -1679,7 +1829,7 @@ if [ -s "$PREV_DNSMASQ" ]; then
     uci commit dhcp 2>/dev/null
     rm -f "$PREV_DNSMASQ" 2>/dev/null
 fi
-for r in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
+for r in Block_UDP_80 Block_UDP_443; do
 while :; do idx="$(uci show firewall 2>/dev/null | grep "name='$r'" | head -n1 | cut -d. -f2 | cut -d= -f1)"; [ -n "$idx" ] || break; uci -q delete "firewall.$idx"; done
 done
 uci commit firewall 2>/dev/null
@@ -1768,11 +1918,10 @@ UNKNOWN) printf '%s' 'владелец не определён';;
 esac
 }
 config_state_word() {
-v="$1"
-if [ "$v" = 1 ]; then
-printf '%s' "${C_GREEN}ВКЛ • выбрано${C_NC}"
+if [ "$1" = 1 ]; then
+printf "${C_GREEN}ВКЛ • выбрано${C_NC}"
 else
-printf '%s' "${C_YELLOW}ВЫКЛ • не выбрано${C_NC}"
+printf "${C_YELLOW}ВЫКЛ • не выбрано${C_NC}"
 fi
 }
 show_map() {
@@ -1826,17 +1975,15 @@ printf "${C_SECTION}МОДУЛИ DNS MANAGER${C_NC}\n"
 printf "  Профиль:                    ${C_YELLOW}%s${C_NC}\n" "$( [ "$DNS_PROFILE" = hybrid ] && printf '%s' 'Hybrid SmartDNS — 6 DoH + Yandex RU' || printf '%s' 'Пользовательский' )"
 printf "  Балансировка DNS:           %s\n" "$(config_state_word "$BALANCER_ENABLED")"
 printf "  Раздельный DNS (.ru/.su/.рф): %s\n" "$(config_state_word "$TLD_SPLIT")"
-printf "  Блокировка QUIC:            %s\n" "$(config_state_word "$BLOCK_QUIC")"
-printf "  Исправление MTU:             %s\n" "$(config_state_word "$MTU_FIX")"
-printf "  Резерв времени по IP:       %s\n" "$(config_state_word "$NTP_IP_FALLBACK")"
-printf "  Оптимизация ядра:            %s\n" "$(config_state_word "$SYSCTL_TUNING")"
-printf "  Go / Tailscale / TG WS:     %s\n" "$(config_state_word "$GO_OPTIMIZE")"
-printf "  NTP для клиентов:           %s\n" "$(config_state_word "$NTP_CLIENTS")"
-printf "  Производительность dnsmasq: %s\n" "$(config_state_word "$DNSMASQ_PERF")"
-printf "  Клиентские DNS-фиксы:       %s\n" "$(config_state_word "$CLIENT_FIXES")"
-printf "  Расширенный sysctl:         %s\n" "$(config_state_word "$SYSCTL_EXTENDED")"
-printf "  Tailscale hotplug:           %s\n" "$(config_state_word "$TAILSCALE_HOTPLUG")"
-printf "  Чистка cron:                %s\n" "$(config_state_word "$CRON_CLEANUP")"
+printf "  Блокировка QUIC (DPI):      %s\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "  Исправление MTU / MSS:      %s\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "  Перехват всего DNS:         %s\n" "$(module_state_word force "$FORCE_DOH")"
+printf "  Оптимизация Sysctl/NAT:     %s\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "  Тюнинг dnsmasq:             %s\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "  Оптимизация Go-приложений:  %s\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "  NTP для клиентов:           %s\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+printf "  Авто-перезапуск Tailscale:  %s\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+printf "  Фиксы телеметрии/связи:     %s\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
 printf "${C_GREEN}✓ Discovery завершён. Изменений в конфигурацию не внесено.${C_NC}\n"
 pause
 }
@@ -2008,18 +2155,6 @@ safe_read a
 case "$a" in
 1)
 if auto_fill_slots "$goal"; then
-BLOCK_QUIC=0
-MTU_FIX=0
-SYSCTL_TUNING=0
-GO_OPTIMIZE=0
-FORCE_DOH=0
-NTP_CLIENTS=0
-DNSMASQ_PERF=0
-CLIENT_FIXES=0
-SYSCTL_EXTENDED=0
-TAILSCALE_HOTPLUG=0
-CRON_CLEANUP=0
-save_config
 CORE_ONLY=1
 apply_settings
 CORE_ONLY=0
@@ -2083,12 +2218,7 @@ printf "${C_YELLOW}[8]${C_NC} RU2 %-24s порт=${C_WHITE}%s${C_NC}\n" "$(dns_n
 printf "${C_YELLOW}[9]${C_NC} ⚡ Автоподбор лучших 6 по выбранной категории\n"
 printf "${C_YELLOW}[10]${C_NC} ⭐ Восстановить стандартный Hybrid SmartDNS\n"
 printf "${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
-[ -z "$c" ] && {
-if confirm_action "Применить выбранные слоты сейчас?"; then
-apply_settings
-fi
-return
-}
+[ -z "$c" ] && return
 case "$c" in
 1|2|3|4|5|6) select_slot "$c";;
 7) select_slot RU;;
@@ -2116,8 +2246,9 @@ case "$c" in
 *) return;;
 esac
 save_config
-if confirm_action "Применить настройки Bootstrap сейчас?"; then
-apply_settings
+if confirm_action "Применить выбранный Bootstrap сейчас?"; then
+    apply_bootstrap_only
+    pause
 fi
 }
 menu_bogus() {
@@ -2143,9 +2274,77 @@ reconcile_dnsmasq >/dev/null 2>&1
 /etc/init.d/dnsmasq restart >/dev/null 2>&1
 save_config
 }
+remove_sysctl_base() {
+f="/etc/sysctl.d/90-dns-manager.conf"
+sf="$STATE_DIR/sysctl-before.conf"
+[ -f "$f" ] || return 0
+for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
+old="$(awk -F'|' -v k="$kv" '$1==k{print $2;exit}' "$sf" 2>/dev/null)"
+[ -n "$old" ] && [ "$old" != unknown ] && sysctl -w "$kv=$old" >/dev/null 2>&1 || true
+done
+rm -f "$f" "$sf"
+}
+
+remove_go_optimize() {
+for f in /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale; do
+bak="$f.dns-manager.bak"
+[ -f "$bak" ] || continue
+curh="$(file_hash "$f")"; managedh="$(cat "$STATE_DIR/$(basename "$f").managed.sha256" 2>/dev/null)"
+if [ -n "$managedh" ] && [ -n "$curh" ] && [ "$curh" != "$managedh" ]; then
+warn_msg "Не восстанавливаю $f: файл изменён вручную."
+continue
+fi
+mv "$bak" "$f" 2>/dev/null && rm -f "$STATE_DIR/$(basename "$f").managed.sha256"
+done
+}
+
+reload_fw() {
+if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+}
+
+apply_extras_now() {
+case "$1" in
+balance|tld)   reconcile_dnsmasq >/dev/null 2>&1; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+ntp)           [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback;;
+quic)          apply_quic_toggle;;
+mtu)           apply_mtu_toggle;;
+sysctl)        [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || remove_sysctl_base;;
+go)            [ "$GO_OPTIMIZE" = 1 ] && apply_go || remove_go_optimize;;
+force)         [ "$FORCE_DOH" = 1 ] && apply_dns_force || remove_dns_force; reload_fw;;
+ntp_clients)   [ "$NTP_CLIENTS" = 1 ] && apply_ntp_clients || remove_ntp_clients; /etc/init.d/dnsmasq restart >/dev/null 2>&1; reload_fw;;
+dnsmasq_perf)  [ "$DNSMASQ_PERF" = 1 ] && apply_dnsmasq_perf || remove_dnsmasq_perf; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+client_fixes)  [ "$CLIENT_FIXES" = 1 ] && apply_client_fixes || remove_client_fixes; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+sysctl_ext)    [ "$SYSCTL_EXTENDED" = 1 ] && apply_sysctl_extended || remove_sysctl_extended;;
+ts_hotplug)    [ "$TAILSCALE_HOTPLUG" = 1 ] && apply_tailscale_hotplug || remove_tailscale_hotplug;;
+cron)          cleanup_manager_cron;;
+esac
+save_config
+}
+
+apply_bootstrap_only() {
+b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
+i=0; changed=0
+while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
+if [ "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)" = 1 ]; then
+uci set "https-dns-proxy.@https-dns-proxy[$i].bootstrap_dns=$b_list"
+changed=1
+fi
+i=$((i+1))
+done
+if [ "$changed" = 1 ]; then
+uci commit https-dns-proxy 2>/dev/null
+/etc/init.d/https-dns-proxy restart >/dev/null 2>&1
+ok_msg "Bootstrap обновлён для наших DoH-инстансов. Ядро не тронуто."
+else
+info_msg "Наших DoH-секций нет — bootstrap будет использован при следующем применении."
+fi
+save_config
+}
+
 apply_quic_toggle() {
     if [ "$BLOCK_QUIC" != 1 ]; then
-        for _rname in DnsMgr_QUIC_80 DnsMgr_QUIC_443; do
+        for _rname in Block_UDP_80 Block_UDP_443; do
             while :; do
                 _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
                 [ -n "$_ridx" ] || break
@@ -2174,54 +2373,107 @@ else
 fi
 save_config
 }
+check_module_state() {
+    sec="$(get_dnsmasq_section)"
+    case "$1" in
+        balance) [ "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)" = 1 ] && printf 1 || printf 0 ;;
+        tld) uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n' | grep -q '^/ru/' && printf 1 || printf 0 ;;
+        ntp) [ "$(uci -q get system.ntp.use_dhcp 2>/dev/null)" = 0 ] && uci -q get system.ntp.server 2>/dev/null | grep -qE '([0-9]{1,3}\.){3}[0-9]{1,3}' && printf 1 || printf 0 ;;
+        quic) [ "$QUIC_OURS" = 1 ] && printf 1 || printf 0 ;;
+        mtu) [ "$(uci -q get firewall.@defaults[0].mtu_fix 2>/dev/null)" = 1 ] && printf 1 || printf 0 ;;
+        sysctl) [ -f /etc/sysctl.d/90-dns-manager.conf ] && printf 1 || printf 0 ;;
+        sysctl_ext) [ -f /etc/sysctl.d/91-dns-manager-extended.conf ] && printf 1 || printf 0 ;;
+        go) grep -qs 'DNS_MANAGER_GOMEMLIMIT' /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale 2>/dev/null && printf 1 || printf 0 ;;
+        force) uci -q get firewall.dns_manager_dns_redirect >/dev/null 2>&1 && printf 1 || printf 0 ;;
+        ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0 ;;
+        dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0 ;;
+        client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0 ;;
+        ts_hotplug) [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
+        cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0 ;;
+        watchdog) grep -qsE '^[[:space:]]*\*/[0-9]+[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*.*dns-manager[[:space:]]+(watchdog|-w|--watchdog)([[:space:]]|$)' /etc/crontabs/root 2>/dev/null && printf 1 || printf 0 ;;
+        *) printf 0 ;;
+    esac
+}
 module_state_word() {
-case "$1" in
-1|yes|on) printf "${C_GREEN}✓ ВКЛ • будет применено${C_NC}" ;;
-0|no|off|"") printf "${C_YELLOW}✗ ВЫКЛ • не выбрано${C_NC}" ;;
-*) printf "${C_WHITE}%s${C_NC}" "$1" ;;
-esac
+    _desired="$2"
+    _real="$(check_module_state "$1")"
+    if [ "$_desired" = 1 ] && [ "$_real" = 1 ]; then
+        printf "${C_GREEN}✓ ВКЛ • применено${C_NC}"
+    elif [ "$_desired" = 1 ]; then
+        printf "${C_YELLOW}⚠ ВКЛ • ещё не применено${C_NC}"
+    elif [ "$_real" = 1 ]; then
+        printf "${C_PINK}↻ есть на роутере • в меню ВЫКЛ${C_NC}"
+    else
+        printf "${C_YELLOW}✗ ВЫКЛ${C_NC}"
+    fi
 }
 menu_extras() {
 while :; do
 clear_screen
 printf "${C_WHITE}╔══════════════════════════════════════════════╗\n"
-printf "║           🔧 Дополнительные настройки         ║\n"
-printf "╚══════════════════════════════════════════════╝${C_NC}\n\n"
-printf "${C_SECTION}ОСНОВА DNS${C_NC}\n"
-printf "  ${C_GREEN}[1]${C_NC} Балансировка dnsmasq: %b\n" "$(state_word "$BALANCER_ENABLED")"
-printf "  ${C_GREEN}[2]${C_NC} Раздельный DNS (.ru/.su/.рф): %b\n" "$(state_word "$TLD_RU_ENABLED")"
-printf "  ${C_GREEN}[3]${C_NC} NTP IP-first: %b\n" "$(state_word "$NTP_IP_FALLBACK")"
-printf "\n${C_SECTION}ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[4]${C_NC} Блокировка QUIC: %b\n" "$(module_state_word "$BLOCK_QUIC")"
-printf "  ${C_YELLOW}[5]${C_NC} Исправление MTU: %b\n" "$(module_state_word "$MTU_FIX")"
-printf "  ${C_YELLOW}[6]${C_NC} Базовый Sysctl: %b\n" "$(module_state_word "$SYSCTL_TUNING")"
-printf "  ${C_YELLOW}[7]${C_NC} Go / Tailscale / TG WS: %b\n" "$(module_state_word "$GO_OPTIMIZE")"
-printf "  ${C_YELLOW}[8]${C_NC} Принудительный локальный DNS: %b\n" "$(module_state_word "$FORCE_DOH")"
-printf "  ${C_YELLOW}[9]${C_NC} NTP для клиентов: %b\n" "$(module_state_word "$NTP_CLIENTS")"
-printf "  ${C_YELLOW}[10]${C_NC} Производительность dnsmasq: %b\n" "$(module_state_word "$DNSMASQ_PERF")"
-printf "  ${C_YELLOW}[11]${C_NC} Клиентские фиксы Android/Windows: %b\n" "$(module_state_word "$CLIENT_FIXES")"
-printf "  ${C_YELLOW}[12]${C_NC} Расширенный Sysctl + conntrack: %b\n" "$(module_state_word "$SYSCTL_EXTENDED")"
-printf "  ${C_YELLOW}[13]${C_NC} Tailscale hotplug после NTP: %b\n" "$(module_state_word "$TAILSCALE_HOTPLUG")"
-printf "  ${C_YELLOW}[14]${C_NC} Чистка старых cron-задач: %b\n" "$(module_state_word "$CRON_CLEANUP")"
-printf "  ${C_YELLOW}[15]${C_NC} IP-заглушки\n"
-printf "\n${C_CYAN}Изменения только подготавливаются. Чтобы применить их, используйте пункт «Показать и применить выбранное».${C_NC}\n"
-printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
+printf "║      🔧 Дополнительные модули и фиксы        ║\n"
+printf "╚══════════════════════════════════════════════╝${C_NC}\n"
+
+printf "${C_SECTION}🛡 ОБХОД DPI И СЕТЕВЫЕ ФИКСЫ${C_NC}\n"
+printf "  ${C_YELLOW}[1]${C_NC} Блокировка QUIC (UDP 80/443): %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "      ${C_CYAN}↳ Принудительно переводит HTTP/3 в TCP/TLS, помогает обходить DPI${C_NC}\n"
+printf "  ${C_YELLOW}[2]${C_NC} Исправление MTU / MSS: %b\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "      ${C_CYAN}↳ Предотвращает обрывы VPN, WireGuard, Tailscale и Yandex${C_NC}\n"
+printf "  ${C_YELLOW}[3]${C_NC} Перехват всего DNS (Force DNS): %b\n" "$(module_state_word force "$FORCE_DOH")"
+printf "      ${C_CYAN}↳ Блокирует DoT и перенаправляет весь DNS LAN на роутер${C_NC}\n"
+
+printf "\n${C_SECTION}⚡ ОПТИМИЗАЦИЯ ЯДРА И ПРОИЗВОДИТЕЛЬНОСТИ${C_NC}\n"
+printf "  ${C_YELLOW}[4]${C_NC} Оптимизация Sysctl и Conntrack: %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "      ${C_CYAN}↳ Ускоряет NAT, снижает таймауты, увеличивает таблицу conntrack${C_NC}\n"
+printf "  ${C_YELLOW}[5]${C_NC} Тюнинг dnsmasq (кэш и скорость): %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "      ${C_CYAN}↳ Увеличивает кэш, лимиты и отключает лишние проверки${C_NC}\n"
+printf "  ${C_YELLOW}[6]${C_NC} Оптимизация Go-приложений: %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "      ${C_CYAN}↳ Ограничивает память для Tailscale и TG-прокси (GOMEMLIMIT)${C_NC}\n"
+
+printf "\n${C_SECTION}📱 КЛИЕНТЫ, NTP И СЕРВИСЫ${C_NC}\n"
+printf "  ${C_YELLOW}[7]${C_NC} NTP-сервер для клиентов LAN: %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+printf "      ${C_CYAN}↳ Роутер раздает себя как NTP-сервер (DHCP opt 42 + DNAT)${C_NC}\n"
+printf "  ${C_YELLOW}[8]${C_NC} Авто-перезапуск Tailscale (WAN up): %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+printf "      ${C_CYAN}↳ Добавляет hotplug-скрипт. При выключении — удаляет его${C_NC}\n"
+printf "  ${C_YELLOW}[9]${C_NC} Фиксы телеметрии и связи (ОС): %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+printf "      ${C_CYAN}↳ Блокирует телеметрию, чинит проверки сети в Android/Windows${C_NC}\n"
+
+printf "\n${C_SECTION}🧹 ОЧИСТКА И ПРОЧЕЕ${C_NC}\n"
+printf "  ${C_YELLOW}[10]${C_NC} Очистка устаревших cron-заданий\n"
+printf "      ${C_CYAN}↳ Удаляет старые cron-скрипты перезапуска DNS Manager (разовое)${C_NC}\n"
+printf "  ${C_YELLOW}[11]${C_NC} Автопроверка DoH (Watchdog): %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
+printf "      ${C_CYAN}↳ Проверяет выбранные DoH и заменяет неработающий сервер${C_NC}\n"
+printf "  ${C_YELLOW}[12]${C_NC} IP-заглушки (bogus-nxdomain)\n"
+printf "      ${C_CYAN}↳ Ручной выбор IP-адресов провайдерских заглушек${C_NC}\n"
+
+printf "\n${C_CYAN}Переключатели применяются сразу и не затрагивают ядро DNS-профиля.${C_NC}\n"
+printf "  ${C_GREEN}[Enter]${C_NC} Назад\n"
+printf "${C_YELLOW}Выбор:${C_NC} "; safe_read c
 case "$c" in
-1) [ "$BALANCER_ENABLED" = 1 ] && BALANCER_ENABLED=0 || BALANCER_ENABLED=1; save_config;;
-2) [ "$TLD_RU_ENABLED" = 1 ] && TLD_RU_ENABLED=0 || TLD_RU_ENABLED=1; TLD_SPLIT="$TLD_RU_ENABLED"; save_config;;
-3) [ "$NTP_IP_FALLBACK" = 1 ] && NTP_IP_FALLBACK=0 || NTP_IP_FALLBACK=1; save_config;;
-4) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; save_config;;
-5) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; save_config;;
-6) [ "$SYSCTL_TUNING" = 1 ] && SYSCTL_TUNING=0 || SYSCTL_TUNING=1; save_config;;
-7) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; save_config;;
-8) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; save_config;;
-9) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; save_config;;
-10) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; save_config;;
-11) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; save_config;;
-12) [ "$SYSCTL_EXTENDED" = 1 ] && SYSCTL_EXTENDED=0 || SYSCTL_EXTENDED=1; save_config;;
-13) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; save_config;;
-14) [ "$CRON_CLEANUP" = 1 ] && CRON_CLEANUP=0 || CRON_CLEANUP=1; save_config;;
-15) menu_bogus;;
+1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
+2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
+3) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
+4)
+   if [ "$SYSCTL_TUNING" = 1 ]; then
+       SYSCTL_TUNING=0; SYSCTL_EXTENDED=0
+   else
+       SYSCTL_TUNING=1; SYSCTL_EXTENDED=1
+   fi
+   apply_extras_now sysctl
+   apply_extras_now sysctl_ext
+   pause;;
+5) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
+6) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
+7) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
+8) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
+9) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
+10)
+   cleanup_manager_cron
+   CRON_CLEANUP=1
+   save_config
+   pause;;
+11) [ "$WATCHDOG_ENABLED" = 1 ] && WATCHDOG_ENABLED=0 || WATCHDOG_ENABLED=1; apply_watchdog; pause;;
+12) menu_bogus;;
 '') return;;
 *) warn_msg "Неизвестный пункт."; pause;;
 esac
@@ -2350,19 +2602,8 @@ printf "${C_GREEN}✓${C_NC} dnsmasq :53\n"
 printf "${C_GREEN}✓${C_NC} allservers=1\n"
 printf "${C_GREEN}✓${C_NC} уникальные порты\n"
 printf "${C_GREEN}✓${C_NC} чужие DoH/Firewall не присваиваются менеджеру\n"
-printf "${C_GREEN}✓${C_NC} проверка после применения + автоматический rollback\n"
-printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN для IP/SNI/DPI/HTTP-блокировок.\n"
-BLOCK_QUIC=0
-MTU_FIX=0
-SYSCTL_TUNING=0
-GO_OPTIMIZE=0
-FORCE_DOH=0
-NTP_CLIENTS=0
-DNSMASQ_PERF=0
-CLIENT_FIXES=0
-SYSCTL_EXTENDED=0
-TAILSCALE_HOTPLUG=0
-CRON_CLEANUP=0
+printf "${C_GREEN}✓${C_NC} проверка после применения + автоматический откат\n"
+printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN при блокировках по IP, SNI, DPI и HTTP.\n"
 test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
 DNS_PROFILE="hybrid"
@@ -2392,6 +2633,197 @@ else
 printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_NC"
 fi
 }
+# ----- Автоматическая проверка DoH -----
+watchdog_check_slot() {
+    _id="$1"
+    [ -n "$_id" ] || return 1
+    _url="$(normalize_url "$(dns_url "$_id")")"
+    [ -n "$_url" ] || return 1
+    verify_doh_endpoint "$_url" "$(dns_name "$_id")" >/dev/null 2>&1
+}
+
+watchdog_pick_replacement() {
+    _slot="$1"
+    _need="bypass"
+    case "$_slot" in RU|RU_2) _need="regional" ;; esac
+
+    _used="$TMP_DIR/watchdog-used"
+    _tried="$TMP_DIR/watchdog-tried"
+    : > "$_used"
+    [ -f "$_tried" ] || : > "$_tried"
+
+    for _s in 1 2 3 4 5 6 RU RU_2; do
+        eval "_uid=\${SLOT_$_s}"
+        [ -n "$_uid" ] || continue
+        _u="$(normalize_url "$(dns_url "$_uid")")"
+        [ -n "$_u" ] && printf '%s\n' "$_u" >> "$_used"
+    done
+
+    [ -s "$TEST_RESULTS" ] || return 1
+
+    while IFS='|' read -r _rid _rcat _rname _rms _rst; do
+        [ -n "$_rid" ] || continue
+        _rurl="$(normalize_url "$(dns_url "$_rid")")"
+        [ -n "$_rurl" ] || continue
+        grep -qxF "$_rurl" "$_used" 2>/dev/null && continue
+        grep -qxF "$_rurl" "$_tried" 2>/dev/null && continue
+
+        # Кандидат берётся из всего каталога только после успешного свежего теста.
+        if watchdog_check_slot "$_rid"; then
+            printf '%s\n' "$_rid"
+            return 0
+        fi
+        printf '%s\n' "$_rurl" >> "$_tried"
+    done <<EOF_CANDIDATES
+$(awk -F'|' -v c="$_need" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n)
+EOF_CANDIDATES
+    return 1
+}
+
+run_watchdog() {
+    _lock="$STATE_DIR/watchdog.lock"
+
+    if [ -f "$_lock" ]; then
+        _pid="$(cat "$_lock" 2>/dev/null)"
+        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+            log_msg "Проверка DoH пропущена: предыдущая проверка ещё работает (PID $_pid)."
+            return 0
+        fi
+    fi
+
+    printf '%s\n' "$$" > "$_lock" 2>/dev/null || {
+        log_msg "Не удалось создать блокировку проверки DoH."
+        return 1
+    }
+
+    _wd_rc=0
+    run_discovery
+    load_config
+
+    if [ "${DNS_PROFILE:-}" != "hybrid" ]; then
+        log_msg "Проверка DoH пропущена: активный профиль не Hybrid."
+        rm -f "$_lock" 2>/dev/null
+        return 0
+    fi
+
+    _age=999999999
+    if [ -f "$TEST_RESULTS" ]; then
+        _mtime="$(stat -c %Y "$TEST_RESULTS" 2>/dev/null || printf '0')"
+        case "$_mtime" in
+            ''|*[!0-9]*) _mtime=0 ;;
+        esac
+        _now="$(date +%s)"
+        _age=$(( _now - _mtime ))
+        [ "$_age" -lt 0 ] && _age=999999999
+    fi
+
+    if [ "$_age" -gt 3600 ]; then
+        log_msg "Результаты теста старше часа. Обновляю проверку каталога."
+        test_dns_catalog >/dev/null 2>&1 || true
+    fi
+
+    : > "$TMP_DIR/watchdog-tried"
+
+    for _slot in 1 2 3 4 5 6 RU RU_2; do
+        eval "_old_id=\${SLOT_$_slot}"
+        [ -n "$_old_id" ] || continue
+
+        if [ "$_slot" = "RU_2" ] && [ -z "$PORT_RU_2" ]; then
+            continue
+        fi
+
+        if watchdog_check_slot "$_old_id"; then
+            log_msg "DoH слот $_slot: $(dns_name "$_old_id") работает."
+            continue
+        fi
+
+        sleep 5
+
+        if watchdog_check_slot "$_old_id"; then
+            log_msg "DoH слот $_slot: первый сбой не подтвердился."
+            continue
+        fi
+
+        log_msg "DoH слот $_slot: $(dns_name "$_old_id") не отвечает двумя проверками. Начинаю замену."
+
+        _slot_ok=0
+        : > "$TMP_DIR/watchdog-tried"
+
+        for _attempt in 1 2 3; do
+            _repl="$(watchdog_pick_replacement "$_slot")"
+
+            if [ -z "$_repl" ] || [ "$_repl" = "$_old_id" ]; then
+                log_msg "DoH слот $_slot: подходящий кандидат для попытки $_attempt не найден."
+                continue
+            fi
+
+            eval "SLOT_$_slot=\"$_repl\""
+            save_config
+
+            log_msg "DoH слот $_slot: попытка $_attempt из 3 — $(dns_name "$_repl")."
+
+            SILENT_APPLY=1
+            CORE_ONLY=1
+            if apply_settings >> "$LOG_FILE" 2>&1; then
+                CORE_ONLY=0
+                SILENT_APPLY=0
+                _slot_ok=1
+                log_msg "DoH слот $_slot: замена успешна — $(dns_name "$_old_id") -> $(dns_name "$_repl")."
+                break
+            fi
+            CORE_ONLY=0
+            SILENT_APPLY=0
+
+            # Apply сам выполняет автоматический откат конфигурации.
+            # Возвращаем выбранный слот к прежнему значению до следующей попытки.
+            eval "SLOT_$_slot=\"$_old_id\""
+            save_config
+            printf '%s\n' "$(normalize_url "$(dns_url "$_repl")")" >> "$TMP_DIR/watchdog-tried"
+            log_msg "DoH слот $_slot: кандидат $(dns_name "$_repl") не прошёл проверку, выполнен откат."
+
+            [ "$_attempt" -lt 3 ] && sleep 2
+        done
+
+        if [ "$_slot_ok" != 1 ]; then
+            eval "SLOT_$_slot=\"$_old_id\""
+            save_config
+            log_msg "DoH слот $_slot: все 3 попытки неудачны. Оставляю предыдущую конфигурацию."
+            _wd_rc=1
+        fi
+    done
+
+    rm -f "$_lock" 2>/dev/null
+    return "$_wd_rc"
+}
+
+apply_watchdog() {
+    f="/etc/crontabs/root"
+    [ -f "$f" ] || : > "$f" || return 1
+
+    _interval="${WATCHDOG_INTERVAL:-15}"
+    case "$_interval" in
+        ''|*[!0-9]*) _interval=15 ;;
+    esac
+    [ "$_interval" -ge 1 ] 2>/dev/null || _interval=15
+    [ "$_interval" -le 59 ] 2>/dev/null || _interval=59
+    WATCHDOG_INTERVAL="$_interval"
+
+    # Удаляем только прежнюю строку Watchdog DNS Manager.
+    awk '!/^[[:space:]]*\*\/[0-9]+[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*.*dns-manager[[:space:]]+(watchdog|-w|--watchdog)([[:space:]]|$)/{print}' "$f" > "$f.tmp" || return 1
+    mv "$f.tmp" "$f" || return 1
+
+    if [ "${WATCHDOG_ENABLED:-0}" = 1 ]; then
+        printf '*/%s * * * * %s watchdog >> %s 2>&1\n' "$WATCHDOG_INTERVAL" "$MANAGER_PATH" "$LOG_FILE" >> "$f"
+        /etc/init.d/cron reload >/dev/null 2>&1 || true
+        ok_msg "Автопроверка DoH включена: каждые ${WATCHDOG_INTERVAL} минут."
+    else
+        /etc/init.d/cron reload >/dev/null 2>&1 || true
+        ok_msg "Автопроверка DoH выключена."
+    fi
+
+    save_config
+}
+
 main_menu() {
 while :; do
 run_discovery
@@ -2402,6 +2834,7 @@ printf "  IPv6          : %b\n" "$(state_word "$IPV6_ROUTE")"
 printf "  dnsmasq       : %b\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  https-dns-proxy: %b\n" "$(state_word "$HAS_HDP")"
 printf "  DoH обнаружено: ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
+printf "  Автопроверка DoH: %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
 [ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}⚠ force_dns стороннего DoH включён${C_NC}\n"
 printf "${C_BOLD}${C_PINK}🚀 БЫСТРАЯ НАСТРОЙКА${C_NC}\n"
 printf "  ${C_PINK}[1]${C_NC} 🚀 ${C_BOLD}МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД${C_NC}\n"
@@ -2457,6 +2890,18 @@ safe_read c
         esac
 done
 }
+case "${1:-}" in
+watchdog|--watchdog|-w)
+    preflight_readonly
+    init_dirs
+    write_catalogs
+    load_config
+    log_msg "Запуск автоматической проверки DoH."
+    run_watchdog
+    exit $?
+    ;;
+esac
+
 # ENTRY: always read first.
 preflight_readonly
 init_dirs
