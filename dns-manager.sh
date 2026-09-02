@@ -2736,10 +2736,11 @@ watchdog_desired_cat() {
 }
 
 watchdog_candidate_categories() {
-    _slot="$1"
-    _desired="$(watchdog_desired_cat "$_slot")"
-    printf '%s\n' "$_desired"
-    [ "$_desired" = clean ] || printf '%s\n' clean
+_slot="$1"
+_desired="$(watchdog_desired_cat "$_slot")"
+printf '%s\n' "$_desired"
+[ "$_desired" = "clean" ] || printf '%s\n' "clean"
+printf '%s\n' "__ANY__"
 }
 
 watchdog_check_slot() {
@@ -2778,7 +2779,7 @@ watchdog_pick_replacement() {
 
             printf '%s\n' "$_rurl" >> "$_tried"
         done <<EOF_CANDIDATES
-$(awk -F'|' -v c="$_need" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n)
+awk -F'|' -v c="$_need" '$5=="OK" && (c=="__ANY__" || $2==c){print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n
 EOF_CANDIDATES
 
     done < "$TMP_DIR/watchdog-categories-$$"
