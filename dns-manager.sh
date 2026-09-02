@@ -2170,9 +2170,6 @@ while IFS='|' read -r _id _cat2 _name _ms _st; do
     [ "$i" -gt 6 ] && break
 done < "$_src"
 
-# Для Hybrid в профиле bypass: если рабочих bypass меньше шести,
-# недостающие места заполняются лучшими clean DNS. Исходная категория
-# слота остаётся bypass, чтобы Watchdog позже вернул слот обратно.
 if [ "$_cat" = bypass ]; then
     _n=0
     [ -s "$_pool" ] && _n="$(awk 'END{print NR+0}' "$_pool")"
@@ -2187,8 +2184,6 @@ if [ "$_cat" = bypass ]; then
             [ -n "$_url" ] || continue
             grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
             printf '%s\n' "$_url" >> "$_seen_urls"
-            # сохраняем реальную категорию во временном наборе, но при записи слота
-            # ниже фиксируем целевую категорию bypass.
             printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
             _n=$((_n+1))
         done < "$_src_clean"
@@ -2197,8 +2192,6 @@ fi
 
 [ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
 
-# Для all сохраняем приоритет: по одному лучшему кандидату из каждой категории,
-# затем общий рейтинг, без regional в основных шести слотах.
 if [ "$_cat" = all ]; then
     _src2="$TMP_DIR/auto-candidates-all"
     : > "$_src2"
@@ -2237,7 +2230,6 @@ while IFS='|' read -r _id _cat2 _name _ms _st; do
     [ "$i" -gt 6 ] && break
 done < "$_pool"
 
-# Если bypass-пула не хватило даже с clean, незаполненные слоты очищаем.
 while [ "$i" -le 6 ]; do
     eval "SLOT_$i=\"\""
     eval "SLOT_${i}_CAT=\"bypass\""
