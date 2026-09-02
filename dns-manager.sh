@@ -3083,6 +3083,6 @@ printf "${C_YELLOW}ℹ Обнаружена старая конфигураци�
 fi
 run_discovery
 printf "${C_GREEN}✓ Первый проход завершён. Настройки роутера пока не изменялись.${C_NC}\n"
-printf "${C_YELLOW}ℹ Каталог DNS: %s вариантов. Если найден старый каталог — он сохранён как .previous.${C_NC}\n" "$(count_dns)"
+printf "${C_YELLOW}ℹ Каталог DNS: %s вариантов. ${C_NC}\n" "$(count_dns)"
 log_msg "START v$VERSION OpenWrt=$SYS_OWRT target=$SYS_TARGET arch=$SYS_ARCH fw=$SYS_FW"
 main_menu
