@@ -101,8 +101,8 @@ cat > "$DNS_CATALOG" <<'EOF_DNS'
 #! Список кандидатов. Работоспособность проверяется с роутера.
 # FORMAT=ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # --- Обход блокировок / региональных ограничений / сервисы ---
-mafioznik|bypass|geo+ai+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
-mafioznik_xyz|bypass|geo+ai+services|Mafioznik DNS XYZ|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
+mafioznik|bypass|geo+services|Mafioznik DNS|https://dns.mafioznik.com/dns-query|ru/global|verified-current
+mafioznik_xyz|bypass|geo+services|Mafioznik DNS XYZ|https://dns.mafioznik.xyz/dns-query|ru/global|runtime-check
 astracat|bypass|geo+ads+services|Astrakat DNS|https://dns.astrakat.ru/dns-query|ru/global|user-confirmed-current
 astracat_1498|bypass|geo+ads+services|AstraCat DNS :1498|https://dns.astrakat.ru:1498/dns-query|ru/global|runtime-check
 astracat_8443|bypass|geo+ads+services|AstraCat DNS :8443|https://dns.astrakat.ru:8443/dns-query|ru/global|runtime-check
@@ -111,8 +111,8 @@ xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global
 nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
 geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
 geohide_8443|bypass|geo+services|GeoHide DNS :8443|https://dns.geohide.ru:8443/dns-query|ru/global|runtime-check
-comss_ru|bypass|geo+ai+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
-comss_bypass|bypass|geo+ai+security|Comss.one|https://dns.comss.one/dns-query|ru/global|verified-published-current
+comss_ru|bypass|geo+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
+comss_bypass|bypass|geo+security|Comss.one|https://dns.comss.one/dns-query|ru/global|verified-published-current
 comss_adblock_bypass|bypass|geo+ads+security|Comss.one Ad Filter|https://router.comss.one/dns-query|ru/global|verified-published-current
 vppay|bypass|geo+services|VPPay DNS|https://dns.vppay.ru/dns-query|ru/global|user-confirmed-current
 dynx|bypass|geo+youtube|DynX DNS|https://dns.dynx.pro/dns-query|global|review-runtime
@@ -283,6 +283,8 @@ _had_dns_profile=0
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE" 2>/dev/null
 : "${SLOT_1:=}"; : "${SLOT_2:=}"; : "${SLOT_3:=}"; : "${SLOT_4:=}"; : "${SLOT_5:=}"; : "${SLOT_6:=}"
 : "${SLOT_RU:=}"; : "${SLOT_RU_2:=}"
+: "${SLOT_1_CAT:=}"; : "${SLOT_2_CAT:=}"; : "${SLOT_3_CAT:=}"; : "${SLOT_4_CAT:=}"; : "${SLOT_5_CAT:=}"; : "${SLOT_6_CAT:=}"
+: "${SLOT_RU_CAT:=}"; : "${SLOT_RU_2_CAT:=}"
 : "${PORT_1:=}"; : "${PORT_2:=}"; : "${PORT_3:=}"; : "${PORT_4:=}"; : "${PORT_5:=}"; : "${PORT_6:=}"
 : "${PORT_RU:=}"; : "${PORT_RU_2:=}"
 : "${BOOTSTRAP_DNS:=77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15}"
@@ -293,6 +295,17 @@ _had_dns_profile=0
 TLD_SPLIT="$TLD_RU_ENABLED"
 if [ "$_had_dns_profile" = 0 ] && [ -z "$DNS_PROFILE" ]; then
 DNS_PROFILE="hybrid"
+fi
+if [ "$DNS_PROFILE" = "hybrid" ]; then
+    for _slot in 1 2 3 4 5 6 RU RU_2; do
+        eval "_sid=\${SLOT_${_slot}:-}"
+        eval "_scat=\${SLOT_${_slot}_CAT:-}"
+        if [ -n "$_sid" ] && [ -z "$_scat" ]; then
+            _scat="$(dns_cat "$_sid")"
+            case "$_slot" in RU|RU_2) [ -n "$_scat" ] || _scat="regional" ;; esac
+            eval "SLOT_${_slot}_CAT=\"$_scat\""
+        fi
+    done
 fi
 }
 save_config() {
@@ -306,6 +319,14 @@ SLOT_5="$SLOT_5"
 SLOT_6="$SLOT_6"
 SLOT_RU="$SLOT_RU"
 SLOT_RU_2="$SLOT_RU_2"
+SLOT_1_CAT="$SLOT_1_CAT"
+SLOT_2_CAT="$SLOT_2_CAT"
+SLOT_3_CAT="$SLOT_3_CAT"
+SLOT_4_CAT="$SLOT_4_CAT"
+SLOT_5_CAT="$SLOT_5_CAT"
+SLOT_6_CAT="$SLOT_6_CAT"
+SLOT_RU_CAT="$SLOT_RU_CAT"
+SLOT_RU_2_CAT="$SLOT_RU_2_CAT"
 PORT_1="$PORT_1"
 PORT_2="$PORT_2"
 PORT_3="$PORT_3"
@@ -544,6 +565,7 @@ cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
 okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
 failn=$((total-okn))
 printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
+printf "${C_CYAN}Время — полное время ответа DoH, а не ICMP-пинг. Меньше — быстрее.${C_NC}\n"
 log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
 }
 show_best_category() {
@@ -567,6 +589,14 @@ SLOT_5="comss_ru"
 SLOT_6="vppay"
 SLOT_RU="yandex_ru"
 SLOT_RU_2=""
+SLOT_1_CAT="bypass"
+SLOT_2_CAT="bypass"
+SLOT_3_CAT="bypass"
+SLOT_4_CAT="bypass"
+SLOT_5_CAT="bypass"
+SLOT_6_CAT="bypass"
+SLOT_RU_CAT="regional"
+SLOT_RU_2_CAT="regional"
 PORT_1="$HYBRID_PORT_1"
 PORT_2="$HYBRID_PORT_2"
 PORT_3="$HYBRID_PORT_3"
@@ -2113,6 +2143,7 @@ i=1
 while IFS='|' read -r _id _cat2 _name _ms _st; do
 [ -n "$_id" ] || continue
 eval "SLOT_$i=\"$_id\""
+eval "SLOT_${i}_CAT=\"$_cat2\""
 i=$((i+1))
 [ "$i" -gt 6 ] && break
 done < "$_pool"
@@ -2122,16 +2153,19 @@ _ru1=""
 _yandex_ok="$(awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
 if [ "$_yandex_ok" = yes ]; then
     SLOT_RU="yandex_ru"
+    SLOT_RU_CAT="regional"
     _ru1="yandex_ru"
 else
     _ru1="$(awk -F'|' '$2=="regional" && $5=="OK"{print $1;exit}' "$TEST_RESULTS" 2>/dev/null)"
     if [ -n "$_ru1" ]; then
         SLOT_RU="$_ru1"
+        SLOT_RU_CAT="regional"
     else
         warn_msg "Нет проверенных региональных DNS. RU-сегмент оставлен без нового назначения."
     fi
 fi
 SLOT_RU_2="$(awk -F'|' -v skip="$_ru1" '$2=="regional" && $5=="OK" && $1!=skip{print $1;exit}' "$TEST_RESULTS" 2>/dev/null)"
+SLOT_RU_2_CAT="regional"
 
 save_config
 printf "${C_GREEN}✓ Автоматически выбран набор DNS без дублей.${C_NC}\n"
@@ -2162,7 +2196,7 @@ fi
 ;;
 2)
 clear_screen
-printf "${C_YELLOW}ТОП-5 — %s${C_NC}\n" "$title"
+printf "${C_YELLOW}ТОП-5 по времени ответа — %s${C_NC}\n" "$title"
 show_best_category "$goal" 5 | while IFS='|' read -r _id _cat _name _ms _st; do
 printf "  ${C_WHITE}%-34s${C_NC} %s мс\n" "$_name" "$_ms"
 done
@@ -2187,6 +2221,7 @@ printf "\n${C_YELLOW}[99]${C_NC} Очистить   ${C_GREEN}[Enter]${C_NC} Н�
 [ -z "$c" ] && return
 if [ "$c" = "99" ]; then
 eval "SLOT_$slot=''"
+eval "SLOT_${slot}_CAT=''"
 save_config
 return
 fi
@@ -2195,6 +2230,8 @@ id="$(printf '%s' "$row" | cut -d'|' -f1)"
 [ -n "$id" ] || return
 
 eval "SLOT_$slot=\$id"
+_selected_cat="$(printf '%s' "$row" | cut -d'|' -f2)"
+eval "SLOT_${slot}_CAT=\$_selected_cat"
 save_config
 }
 menu_slots() {
@@ -2610,6 +2647,8 @@ DNS_PROFILE="hybrid"
 auto_fill_slots bypass
 SLOT_RU="yandex_ru"
 SLOT_RU_2=""
+SLOT_RU_CAT="regional"
+SLOT_RU_2_CAT="regional"
 TLD_RU_ENABLED=1
 TLD_SPLIT=1
 BALANCER_ENABLED=1
@@ -2633,7 +2672,29 @@ else
 printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_NC"
 fi
 }
-# ----- Автоматическая проверка DoH -----
+# ----- Проверка DoH -----
+watchdog_desired_cat() {
+    _slot="$1"
+    _cat=""
+    eval "_cat=\${SLOT_${_slot}_CAT:-}"
+    if [ -z "$_cat" ]; then
+        eval "_id=\${SLOT_${_slot}:-}"
+        [ -n "$_id" ] && _cat="$(dns_cat "$_id")"
+    fi
+    case "$_slot" in
+        RU|RU_2) [ -n "$_cat" ] || _cat="regional" ;;
+        *) [ -n "$_cat" ] || _cat="bypass" ;;
+    esac
+    printf '%s\n' "$_cat"
+}
+
+watchdog_candidate_categories() {
+    _slot="$1"
+    _desired="$(watchdog_desired_cat "$_slot")"
+    printf '%s\n' "$_desired"
+    [ "$_desired" = clean ] || printf '%s\n' clean
+}
+
 watchdog_check_slot() {
     _id="$1"
     [ -n "$_id" ] || return 1
@@ -2644,39 +2705,37 @@ watchdog_check_slot() {
 
 watchdog_pick_replacement() {
     _slot="$1"
-    _need="bypass"
-    case "$_slot" in RU|RU_2) _need="regional" ;; esac
-
-    _used="$TMP_DIR/watchdog-used"
-    _tried="$TMP_DIR/watchdog-tried"
-    : > "$_used"
-    [ -f "$_tried" ] || : > "$_tried"
-
-    for _s in 1 2 3 4 5 6 RU RU_2; do
-        eval "_uid=\${SLOT_$_s}"
-        [ -n "$_uid" ] || continue
-        _u="$(normalize_url "$(dns_url "$_uid")")"
-        [ -n "$_u" ] && printf '%s\n' "$_u" >> "$_used"
-    done
+    _used="$2"
+    _tried="$3"
 
     [ -s "$TEST_RESULTS" ] || return 1
 
-    while IFS='|' read -r _rid _rcat _rname _rms _rst; do
-        [ -n "$_rid" ] || continue
-        _rurl="$(normalize_url "$(dns_url "$_rid")")"
-        [ -n "$_rurl" ] || continue
-        grep -qxF "$_rurl" "$_used" 2>/dev/null && continue
-        grep -qxF "$_rurl" "$_tried" 2>/dev/null && continue
+    watchdog_candidate_categories "$_slot" > "$TMP_DIR/watchdog-categories-$$"
 
-        # Кандидат берётся из всего каталога только после успешного свежего теста.
-        if watchdog_check_slot "$_rid"; then
-            printf '%s\n' "$_rid"
-            return 0
-        fi
-        printf '%s\n' "$_rurl" >> "$_tried"
-    done <<EOF_CANDIDATES
+    while IFS= read -r _need; do
+        [ -n "$_need" ] || continue
+
+        while IFS='|' read -r _rid _rcat _rname _rms _rst; do
+            [ -n "$_rid" ] || continue
+
+            _rurl="$(normalize_url "$(dns_url "$_rid")")"
+            [ -n "$_rurl" ] || continue
+
+            grep -qxF "$_rurl" "$_used" 2>/dev/null && continue
+            grep -qxF "$_rurl" "$_tried" 2>/dev/null && continue
+
+            if watchdog_check_slot "$_rid"; then
+                printf '%s\n' "$_rid"
+                return 0
+            fi
+
+            printf '%s\n' "$_rurl" >> "$_tried"
+        done <<EOF_CANDIDATES
 $(awk -F'|' -v c="$_need" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n)
 EOF_CANDIDATES
+
+    done < "$TMP_DIR/watchdog-categories-$$"
+
     return 1
 }
 
@@ -2697,6 +2756,7 @@ run_watchdog() {
     }
 
     _wd_rc=0
+    _returned=0
     run_discovery
     load_config
 
@@ -2706,89 +2766,141 @@ run_watchdog() {
         return 0
     fi
 
+    # Один раз за цикл обновляем каталог, если результаты устарели.
     _age=999999999
     if [ -f "$TEST_RESULTS" ]; then
         _mtime="$(stat -c %Y "$TEST_RESULTS" 2>/dev/null || printf '0')"
-        case "$_mtime" in
-            ''|*[!0-9]*) _mtime=0 ;;
-        esac
+        case "$_mtime" in ''|*[!0-9]*) _mtime=0 ;; esac
         _now="$(date +%s)"
         _age=$(( _now - _mtime ))
         [ "$_age" -lt 0 ] && _age=999999999
     fi
-
     if [ "$_age" -gt 3600 ]; then
-        log_msg "Результаты теста старше часа. Обновляю проверку каталога."
+        log_msg "Результаты теста старше часа. Запускаю повторную проверку каталога."
         test_dns_catalog >/dev/null 2>&1 || true
     fi
 
-    : > "$TMP_DIR/watchdog-tried"
+    _used="$TMP_DIR/watchdog-used-$$"
+    : > "$_used"
+    for _s in 1 2 3 4 5 6 RU RU_2; do
+        eval "_uid=\${SLOT_${_s}:-}"
+        [ -n "$_uid" ] || continue
+        _u="$(normalize_url "$(dns_url "$_uid")")"
+        [ -n "$_u" ] && printf '%s\n' "$_u" >> "$_used"
+    done
 
     for _slot in 1 2 3 4 5 6 RU RU_2; do
-        eval "_old_id=\${SLOT_$_slot}"
-        [ -n "$_old_id" ] || continue
-
-        if [ "$_slot" = "RU_2" ] && [ -z "$PORT_RU_2" ]; then
+        eval "_id=\${SLOT_${_slot}:-}"
+        [ -n "$_id" ] || continue
+        if [ "$_slot" = RU_2 ] && [ -z "$PORT_RU_2" ]; then
             continue
         fi
 
-        if watchdog_check_slot "$_old_id"; then
-            log_msg "DoH слот $_slot: $(dns_name "$_old_id") работает."
+        _desired="$(watchdog_desired_cat "$_slot")"
+        _current_cat="$(dns_cat "$_id")"
+        _is_fallback=0
+        [ "$_current_cat" != "$_desired" ] && _is_fallback=1
+
+        # Если текущий DNS жив, приоритет — вернуть его в целевую категорию.
+        if watchdog_check_slot "$_id"; then
+            if [ "$_is_fallback" = 1 ] && [ "$_returned" = 0 ]; then
+                _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
+                : > "$_tried"
+                _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
+                _repl_cat="$(dns_cat "$_repl")"
+                if [ -n "$_repl" ] && [ "$_repl" != "$_id" ] && [ "$_repl_cat" = "$_desired" ]; then
+                    _old="$_id"
+                    _oldcat="$_current_cat"
+                    _success=0
+                    for _attempt in 1 2 3; do
+                        grep -qxF "$(normalize_url "$(dns_url "$_repl")")" "$_tried" 2>/dev/null || printf '%s\n' "$(normalize_url "$(dns_url "$_repl")")" >> "$_tried"
+                        eval "SLOT_${_slot}=\"$_repl\""
+                        eval "SLOT_${_slot}_CAT=\"$_desired\""
+                        save_config
+                        SILENT_APPLY=1
+                        CORE_ONLY=1
+                        if apply_settings >> "$LOG_FILE" 2>&1; then
+                            _success=1
+                            SILENT_APPLY=0
+                            CORE_ONLY=0
+                            _returned=1
+                            _u="$(normalize_url "$(dns_url "$_repl")")"
+                            grep -qxF "$_u" "$_used" 2>/dev/null || printf '%s\n' "$_u" >> "$_used"
+                            log_msg "DoH слот $_slot возвращён из резерва: $(dns_name "$_old") -> $(dns_name "$_repl")."
+                            break
+                        fi
+                        SILENT_APPLY=0
+                        CORE_ONLY=0
+                        eval "SLOT_${_slot}=\"$_old\""
+                        eval "SLOT_${_slot}_CAT=\"$_desired\""
+                        save_config
+                        log_msg "Возврат DoH слота $_slot: попытка $_attempt не прошла, откат выполнен."
+                        [ "$_attempt" -lt 3 ] && sleep 2
+                        if [ "$_attempt" -lt 3 ]; then
+                            _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
+                            [ -n "$_repl" ] || break
+                        fi
+                    done
+                    if [ "$_success" = 1 ]; then
+                        continue
+                    fi
+                fi
+            fi
+            log_msg "DoH слот $_slot: $(dns_name "$_id") работает."
             continue
         fi
 
         sleep 5
-
-        if watchdog_check_slot "$_old_id"; then
+        if watchdog_check_slot "$_id"; then
             log_msg "DoH слот $_slot: первый сбой не подтвердился."
             continue
         fi
 
-        log_msg "DoH слот $_slot: $(dns_name "$_old_id") не отвечает двумя проверками. Начинаю замену."
-
-        _slot_ok=0
-        : > "$TMP_DIR/watchdog-tried"
+        log_msg "DoH слот $_slot: $(dns_name "$_id") не отвечает двумя проверками. Ищу замену."
+        _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
+        : > "$_tried"
+        _success=0
+        _old="$_id"
+        _oldcat="$_current_cat"
 
         for _attempt in 1 2 3; do
-            _repl="$(watchdog_pick_replacement "$_slot")"
-
-            if [ -z "$_repl" ] || [ "$_repl" = "$_old_id" ]; then
-                log_msg "DoH слот $_slot: подходящий кандидат для попытки $_attempt не найден."
-                continue
+            _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
+            if [ -z "$_repl" ] || [ "$_repl" = "$_id" ]; then
+                log_msg "Для DoH слота $_slot на попытке $_attempt подходящая замена не найдена."
+                break
             fi
 
-            eval "SLOT_$_slot=\"$_repl\""
+            _repl_url="$(normalize_url "$(dns_url "$_repl")")"
+            grep -qxF "$_repl_url" "$_tried" 2>/dev/null || printf '%s\n' "$_repl_url" >> "$_tried"
+            eval "SLOT_${_slot}=\"$_repl\""
+            eval "SLOT_${_slot}_CAT=\"$(watchdog_desired_cat "$_slot")\""
             save_config
-
-            log_msg "DoH слот $_slot: попытка $_attempt из 3 — $(dns_name "$_repl")."
-
             SILENT_APPLY=1
             CORE_ONLY=1
             if apply_settings >> "$LOG_FILE" 2>&1; then
-                CORE_ONLY=0
+                _success=1
                 SILENT_APPLY=0
-                _slot_ok=1
-                log_msg "DoH слот $_slot: замена успешна — $(dns_name "$_old_id") -> $(dns_name "$_repl")."
+                CORE_ONLY=0
+                grep -qxF "$_repl_url" "$_used" 2>/dev/null || printf '%s\n' "$_repl_url" >> "$_used"
+                log_msg "DoH слот $_slot заменён: $(dns_name "$_old") -> $(dns_name "$_repl"). Попытка $_attempt успешна."
                 break
             fi
-            CORE_ONLY=0
+
             SILENT_APPLY=0
-
-            # Apply сам выполняет автоматический откат конфигурации.
-            # Возвращаем выбранный слот к прежнему значению до следующей попытки.
-            eval "SLOT_$_slot=\"$_old_id\""
+            CORE_ONLY=0
+            eval "SLOT_${_slot}=\"$_old\""
+            eval "SLOT_${_slot}_CAT=\"$_desired\""
             save_config
-            printf '%s\n' "$(normalize_url "$(dns_url "$_repl")")" >> "$TMP_DIR/watchdog-tried"
-            log_msg "DoH слот $_slot: кандидат $(dns_name "$_repl") не прошёл проверку, выполнен откат."
-
+            log_msg "Замена DoH слота $_slot: попытка $_attempt не прошла, откат выполнен."
             [ "$_attempt" -lt 3 ] && sleep 2
         done
 
-        if [ "$_slot_ok" != 1 ]; then
-            eval "SLOT_$_slot=\"$_old_id\""
+        if [ "$_success" != 1 ]; then
+            eval "SLOT_${_slot}=\"$_old\""
+            eval "SLOT_${_slot}_CAT=\"$_oldcat\""
             save_config
-            log_msg "DoH слот $_slot: все 3 попытки неудачны. Оставляю предыдущую конфигурацию."
             _wd_rc=1
+            log_msg "Для DoH слота $_slot не удалось найти рабочую замену после трёх попыток. Текущий DNS сохранён."
         fi
     done
 
@@ -2862,7 +2974,7 @@ safe_read c
 [ -z "$c" ] && { clear_screen; printf "${C_GREEN}DNS Manager завершён.${C_NC}\n"; exit 0; }
         case "$c" in
             1) quick_max_bypass ;;
-            2) menu_best_actions clean "МАКСИМАЛЬНАЯ СКОРОСТЬ" ;;
+            2) menu_best_actions clean "ЧИСТЫЙ БЫСТРЫЙ DNS" ;;
             3) menu_best_actions security "МАКСИМАЛЬНАЯ БЕЗОПАСНОСТЬ" ;;
             4) menu_best_actions privacy "МАКСИМАЛЬНАЯ ПРИВАТНОСТЬ" ;;
             5) menu_best_actions adblock "БЛОКИРОВКА РЕКЛАМЫ" ;;
