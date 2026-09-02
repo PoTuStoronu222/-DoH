@@ -36,58 +36,69 @@ C_NC='\033[0m'
 C_TITLE='\033[1;33m'
 C_SECTION='\033[1;37m'
 
-UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/Zapret-Manager.sh"
+UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh"
+
+# 0, если $1 строго новее $2 (числовая часть X.Y)
+_ver_newer() {
+awk -v a="$1" -v b="$2" 'BEGIN{
+  split(a, x, "[.-]"); split(b, y, "[.-]");
+  if (x[1]+0 > y[1]+0) exit 0;
+  if (x[1]+0 < y[1]+0) exit 1;
+  if (x[2]+0 > y[2]+0) exit 0;
+  exit 1;
+}'
+}
+
 auto_update_manager() {
-    [ "${DNS_MANAGER_NO_UPDATE:-0}" = 1 ] && return 0
-    [ "$0" = "$MANAGER_PATH" ] || return 0
-    [ -f "$MANAGER_PATH" ] || return 0
-    [ -w "${MANAGER_PATH%/*}" ] || return 0
+# Только ручной запуск: без аргументов и как установленный файл
+[ "$#" -eq 0 ] || return 0
+[ "${DNS_MANAGER_NO_UPDATE:-0}" = "1" ] && return 0
+[ "$0" = "$MANAGER_PATH" ] || return 0
+[ -f "$MANAGER_PATH" ] || return 0
+[ -w "${MANAGER_PATH%/*}" ] || return 0
+command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || return 0
 
-    _upd_tmp="/tmp/dns-manager-update-$$-$(date +%s)"
-    _upd_old="/tmp/dns-manager-old-$$-$(date +%s)"
-    rm -f "$_upd_tmp" "$_upd_old" 2>/dev/null
+_upd_tmp="/tmp/dns-manager-update-$$"
+rm -f "$_upd_tmp" 2>/dev/null
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL --connect-timeout 4 --max-time 15 -o "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1
+else
+  wget -q -T 15 -O "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1
+fi
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --connect-timeout 4 --max-time 15 -o "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
-    else
-        return 0
-    fi
+if [ ! -s "$_upd_tmp" ]; then
+  printf "${C_CYAN}ℹ Проверка обновления: источник недоступен. Запуск продолжается.${C_NC}\n"
+  rm -f "$_upd_tmp" 2>/dev/null; return 0
+fi
 
-    [ -s "$_upd_tmp" ] || { rm -f "$_upd_tmp"; return 0; }
-    sed -n '1{/^#!\/bin\/sh$/!q};' "$_upd_tmp" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
-    grep -q '^VERSION="[^"]*"$' "$_upd_tmp" 2>/dev/null || { rm -f "$_upd_tmp"; return 0; }
-    sh -n "$_upd_tmp" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
+# Санити: это shell-скрипт с VERSION= и он проходит sh -n
+head -n 1 "$_upd_tmp" 2>/dev/null | grep -q '^#!/bin/sh' || { rm -f "$_upd_tmp"; return 0; }
+_new_version="$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' "$_upd_tmp" 2>/dev/null | head -n1)"
+if [ -z "$_new_version" ]; then rm -f "$_upd_tmp"; return 0; fi
+sh -n "$_upd_tmp" 2>/dev/null || { rm -f "$_upd_tmp"; return 0; }
 
-    if command -v cmp >/dev/null 2>&1; then
-        cmp -s "$_upd_tmp" "$MANAGER_PATH" 2>/dev/null && { rm -f "$_upd_tmp"; return 0; }
-    else
-        _old_sum="$(cksum "$MANAGER_PATH" 2>/dev/null)"
-        _new_sum="$(cksum "$_upd_tmp" 2>/dev/null)"
-        [ -n "$_old_sum" ] && [ "$_old_sum" = "$_new_sum" ] && { rm -f "$_upd_tmp"; return 0; }
-    fi
+if [ "$_new_version" = "$VERSION" ]; then
+  printf "${C_GREEN}✓ Проверка обновления: версия %s актуальна.${C_NC}\n" "$VERSION"
+  rm -f "$_upd_tmp" 2>/dev/null; return 0
+fi
 
-    _new_version="$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' "$_upd_tmp" | head -n1)"
-    [ -n "$_new_version" ] || { rm -f "$_upd_tmp"; return 0; }
+if ! _ver_newer "$_new_version" "$VERSION"; then
+  printf "${C_CYAN}ℹ Проверка обновления: на GitHub %s — старше установленной %s. Обновление пропущено.${C_NC}\n" "$_new_version" "$VERSION"
+  rm -f "$_upd_tmp" 2>/dev/null; return 0
+fi
 
-    cp -f "$MANAGER_PATH" "$_upd_old" 2>/dev/null || { rm -f "$_upd_tmp"; return 0; }
-    chmod 755 "$_upd_tmp" 2>/dev/null
-    if ! mv -f "$_upd_tmp" "$MANAGER_PATH" 2>/dev/null; then
-        mv -f "$_upd_old" "$MANAGER_PATH" 2>/dev/null
-        rm -f "$_upd_tmp" "$_upd_old" 2>/dev/null
-        return 0
-    fi
+printf "${C_PINK}↻ Доступна версия %s. Обновление...${C_NC}\n" "$_new_version"
+if cp -f "$_upd_tmp" "$MANAGER_PATH" 2>/dev/null && chmod 755 "$MANAGER_PATH" 2>/dev/null; then
+  rm -f "$_upd_tmp" 2>/dev/null
+  printf "${C_GREEN}✓ DNS Manager обновлён: %s → %s${C_NC}\n" "$VERSION" "$_new_version"
+  mkdir -p "$STATE_DIR" 2>/dev/null
+  log_msg "UPDATE $VERSION -> $_new_version"
+  DNS_MANAGER_NO_UPDATE=1 exec "$MANAGER_PATH"
+fi
 
-    chmod 755 "$MANAGER_PATH" 2>/dev/null
-    rm -f "$_upd_old" 2>/dev/null
-    mkdir -p "$STATE_DIR" 2>/dev/null
-    touch "$UPDATE_MARKER" 2>/dev/null
-    log_msg "DNS Manager обновлён: $VERSION -> $_new_version"
-    printf "${C_GREEN}✓ DNS Manager обновлён до версии %s${C_NC}\n" "$_new_version"
-
-    DNS_MANAGER_NO_UPDATE=1 exec "$MANAGER_PATH" "$@"
-    return 0
+printf "${C_YELLOW}! Не удалось заменить %s. Запуск продолжается на %s.${C_NC}\n" "$MANAGER_PATH" "$VERSION"
+rm -f "$_upd_tmp" 2>/dev/null
+return 0
 }
 log_msg() {
 mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
@@ -2855,61 +2866,63 @@ run_watchdog() {
         _is_fallback=0
         [ "$_current_cat" != "$_desired" ] && _is_fallback=1
 
-        # Если текущий DNS жив, приоритет — вернуть его в целевую категорию.
-        if watchdog_check_slot "$_id"; then
-            if [ "$_is_fallback" = 1 ] && [ "$_returned" = 0 ]; then
-                _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
-                : > "$_tried"
-                _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
-                _repl_cat="$(dns_cat "$_repl")"
-                if [ -n "$_repl" ] && [ "$_repl" != "$_id" ] && [ "$_repl_cat" = "$_desired" ]; then
-                    _old="$_id"
-                    _oldcat="$_current_cat"
-                    _success=0
-                    for _attempt in 1 2 3; do
-                        grep -qxF "$(normalize_url "$(dns_url "$_repl")")" "$_tried" 2>/dev/null || printf '%s\n' "$(normalize_url "$(dns_url "$_repl")")" >> "$_tried"
-                        eval "SLOT_${_slot}=\"$_repl\""
-                        eval "SLOT_${_slot}_CAT=\"$_desired\""
-                        save_config
-                        SILENT_APPLY=1
-                        CORE_ONLY=1
-                        if apply_settings >> "$LOG_FILE" 2>&1; then
-                            _success=1
-                            SILENT_APPLY=0
-                            CORE_ONLY=0
-                            _returned=1
-                            _u="$(normalize_url "$(dns_url "$_repl")")"
-                            grep -qxF "$_u" "$_used" 2>/dev/null || printf '%s\n' "$_u" >> "$_used"
-                            log_msg "DoH слот $_slot возвращён из резерва: $(dns_name "$_old") -> $(dns_name "$_repl")."
-                            break
-                        fi
-                        SILENT_APPLY=0
-                        CORE_ONLY=0
-                        eval "SLOT_${_slot}=\"$_old\""
-                        eval "SLOT_${_slot}_CAT=\"$_desired\""
-                        save_config
-                        log_msg "Возврат DoH слота $_slot: попытка $_attempt не прошла, откат выполнен."
-                        [ "$_attempt" -lt 3 ] && sleep 2
-                        if [ "$_attempt" -lt 3 ]; then
-                            _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
-                            _repl_cat="$(dns_cat "$_repl")"
-                            { [ -n "$_repl" ] && [ "$_repl_cat" = "$_desired" ]; } || break
-                        fi
-                    done
-                    if [ "$_success" = 1 ]; then
-                        continue
-                    fi
+      # Если текущий DNS жив, приоритет — вернуть его в целевую категорию.
+if watchdog_check_slot "$_id"; then
+    if [ "$_is_fallback" = 1 ] && [ "$_returned" = 0 ]; then
+        _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
+        : > "$_tried"
+        _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
+        _repl_cat="$(dns_cat "$_repl")"
+        if [ -n "$_repl" ] && [ "$_repl" != "$_id" ] && [ "$_repl_cat" = "$_desired" ]; then
+            _old="$_id"
+            _oldcat="$_current_cat"
+            _success=0
+            for _attempt in 1 2 3; do
+                grep -qxF "$(normalize_url "$(dns_url "$_repl")")" "$_tried" 2>/dev/null || printf '%s\n' "$(normalize_url "$(dns_url "$_repl")")" >> "$_tried"
+                eval "SLOT_${_slot}=\"$_repl\""
+                eval "SLOT_${_slot}_CAT=\"$_desired\""
+                save_config
+                SILENT_APPLY=1
+                CORE_ONLY=1
+                if apply_settings >> "$LOG_FILE" 2>&1; then
+                    _success=1
+                    SILENT_APPLY=0
+                    CORE_ONLY=0
+                    _returned=1
+                    _u="$(normalize_url "$(dns_url "$_repl")")"
+                    grep -qxF "$_u" "$_used" 2>/dev/null || printf '%s\n' "$_u" >> "$_used"
+                    log_msg "DoH слот $_slot возвращён из резерва: $(dns_name "$_old") -> $(dns_name "$_repl")."
+                    break
                 fi
+                SILENT_APPLY=0
+                CORE_ONLY=0
+                eval "SLOT_${_slot}=\"$_old\""
+                eval "SLOT_${_slot}_CAT=\"$_desired\""
+                save_config
+                log_msg "Возврат DoH слота $_slot: попытка $_attempt не прошла, откат выполнен."
+                [ "$_attempt" -lt 3 ] && sleep 2
+                if [ "$_attempt" -lt 3 ]; then
+                    _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
+                    [ -n "$_repl" ] || break
+                fi
+            done
+            if [ "$_success" = 1 ]; then
+                continue
             fi
-            log_msg "DoH слот $_slot: $(dns_name "$_id") работает."
-            continue
         fi
+    fi
+    
+    # DNS жив и (либо не требовал возврата, либо возврат не удался/не нужен)
+    log_msg "DoH слот $_slot: $(dns_name "$_id") работает."
+    continue
+fi
 
-        sleep 5
-        if watchdog_check_slot "$_id"; then
-            log_msg "DoH слот $_slot: первый сбой не подтвердился."
-            continue
-        fi
+# Сюда попадаем только если первая проверка показала, что DNS мертв
+sleep 5
+if watchdog_check_slot "$_id"; then
+    log_msg "DoH слот $_slot: первый сбой не подтвердился."
+    continue
+fi
 
         log_msg "DoH слот $_slot: $(dns_name "$_id") не отвечает двумя проверками. Ищу замену."
         _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
@@ -3057,7 +3070,6 @@ safe_read c
         esac
 done
 }
-auto_update_manager "$@"
 
 case "${1:-}" in
 watchdog|--watchdog|-w)
@@ -3071,18 +3083,19 @@ watchdog|--watchdog|-w)
     ;;
 esac
 
-# ENTRY: always read first.
+# ENTRY: сюда доходит только ручной запуск.
 preflight_readonly
 init_dirs
+auto_update_manager        
 write_catalogs
 load_config
 if [ "${_had_dns_profile:-1}" = 0 ]; then
 hybrid_set_defaults
 save_config
-printf "${C_YELLOW}ℹ Обнаружена старая конфигурация без профиля. Создан основной профиль Hybrid SmartDNS (без изменений роутера).${C_NC}\n"
+printf "${C_YELLOW}ℹ Обнаружена старая конфигурацию без профиля. Создан основной профиль Hybrid SmartDNS (без изменений роутера).${C_NC}\n"
 fi
 run_discovery
 printf "${C_GREEN}✓ Первый проход завершён. Настройки роутера пока не изменялись.${C_NC}\n"
-printf "${C_YELLOW}ℹ Каталог DNS: %s вариантов. ${C_NC}\n" "$(count_dns)"
+printf "${C_YELLOW}ℹ Каталог DNS: %s вариантов.${C_NC}\n" "$(count_dns)"
 log_msg "START v$VERSION OpenWrt=$SYS_OWRT target=$SYS_TARGET arch=$SYS_ARCH fw=$SYS_FW"
 main_menu
