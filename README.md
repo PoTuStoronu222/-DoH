@@ -112,8 +112,6 @@ dns-manager
 Включение:
 
 - в меню: `12` → `11`, интервал 1–59 минут (по умолчанию 15);
-- или строкой в cron: `*/15 * * * * /usr/bin/dns-manager watchdog >> /var/log/dns-manager.log 2>&1`
-- CLI для cron и ручного запуска: `dns-manager watchdog` (`--watchdog`, `-w`).
 
 Алгоритм проверки:
 
