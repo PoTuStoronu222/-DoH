@@ -1,6 +1,6 @@
 #!/bin/sh
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="1.9-HYBRID"
+VERSION="1.10-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -151,8 +151,8 @@ mkdir -p "$CFG_DIR" "$STATE_DIR" "$TMP_DIR" 2>/dev/null
 touch "$LOG_FILE" "$TX_LOG" "$OWNERSHIP" 2>/dev/null
 }
 write_catalogs() {
+rm -f "$DNS_CATALOG.previous" "$NTP_CATALOG.previous" "$BOOTSTRAP_CATALOG.previous" "$BOGUS_CATALOG.previous" 2>/dev/null
 if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# # DNSCATVER=8.1-RU' "$DNS_CATALOG" 2>/dev/null; then
-[ -s "$DNS_CATALOG" ] && cp -f "$DNS_CATALOG" "$DNS_CATALOG.previous" 2>/dev/null
 cat > "$DNS_CATALOG" <<'EOF_DNS'
 # DNSCATVER=8.1-RU
 #! Список кандидатов. Работоспособность проверяется с роутера.
@@ -170,7 +170,6 @@ astracat_1498|bypass|geo+ads+services|AstraCat DNS :1498|https://dns.astrakat.ru
 astracat_8443|bypass|geo+ads+services|AstraCat DNS :8443|https://dns.astrakat.ru:8443/dns-query|ru/global|runtime-check
 malw_link|bypass|ip-block+geo|Malw.link|https://dns.malw.link/dns-query|ru/global|verified-current
 xbox_dns|bypass|games+supercell|Xbox DNS|https://xbox-dns.ru/dns-query|ru/global|verified-current
-nullsproxy|bypass|supercell-games|Null's Proxy DNS|https://dns.nullsproxy.com/dns-query|ru/global|verified-current
 geohide|bypass|geo+services|GeoHide DNS|https://dns.geohide.ru:444/dns-query|ru/global|verified-current
 geohide_8443|bypass|geo+services|GeoHide DNS :8443|https://dns.geohide.ru:8443/dns-query|ru/global|runtime-check
 comss_ru|bypass|geo+services|Comss DNS RU|https://dns.comss.ru/dns-query|ru/global|user-confirmed-current
@@ -283,7 +282,6 @@ dnsforge_youth|family|youth-protection|dnsforge Youth Protection|https://clean.d
 EOF_DNS
 fi
 if [ ! -s "$NTP_CATALOG" ] || ! grep -q '^# NTPCATVER=6.6-FINAL-HYBRID' "$NTP_CATALOG" 2>/dev/null; then
-[ -s "$NTP_CATALOG" ] && cp -f "$NTP_CATALOG" "$NTP_CATALOG.previous" 2>/dev/null
 cat > "$NTP_CATALOG" <<'EOF_NTP'
 # NTPCATVER=6.6-FINAL-HYBRID
 # ID|CATEGORY|NAME|IPV4|IPV6|MODE|LEAP|STATUS
@@ -300,7 +298,6 @@ pool_ru|pool|NTP Pool Russia||||hostname|no-smear|runtime-check
 EOF_NTP
 fi
 if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FIX13' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
-[ -s "$BOOTSTRAP_CATALOG" ] && cp -f "$BOOTSTRAP_CATALOG" "$BOOTSTRAP_CATALOG.previous" 2>/dev/null
 cat > "$BOOTSTRAP_CATALOG" <<'EOF_BOOT'
 # BOOTSTRAPCATVER=6.6-FINAL-HYBRID
 # ID|PROVIDER|IPV4|IPV6|ROLE|STATUS
@@ -316,7 +313,6 @@ mullvad|Mullvad|194.242.2.2,194.242.2.3|2a07:e340::2,2a07:e340::3|bootstrap|veri
 EOF_BOOT
 fi
 if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FIX13' "$BOGUS_CATALOG" 2>/dev/null; then
-[ -s "$BOGUS_CATALOG" ] && cp -f "$BOGUS_CATALOG" "$BOGUS_CATALOG.previous" 2>/dev/null
 cat > "$BOGUS_CATALOG" <<'EOF_BOGUS'
 # BOGUSCATVER=6.6-FINAL-HYBRID
 # ID|TYPE|IP|DESCRIPTION|CONFIDENCE|STATUS
@@ -2136,35 +2132,73 @@ done
 }
 auto_fill_slots() {
 _cat="$1"
+if ! case "$_cat" in bypass|clean|security|privacy|adblock|family|social|all) true;; *) false;; esac; then
+    warn_msg "Неизвестная категория DNS."
+    pause
+    return 1
+fi
 if [ ! -s "$TEST_RESULTS" ]; then
-info_msg "Тест DNS ещё не запускался. Запускаю тест..."
-test_dns_catalog
+    info_msg "Тест DNS ещё не запускался. Запускаю тест..."
+    test_dns_catalog
 fi
 [ -s "$TEST_RESULTS" ] || { warn_msg "Не удалось получить результаты теста."; pause; return 1; }
+
 _pool="$TMP_DIR/auto-slots"
-: > "$_pool"
 _src="$TMP_DIR/auto-candidates"
+: > "$_pool"
 : > "$_src"
+
 if [ "$_cat" = all ]; then
     awk -F'|' '$5=="OK" && $2!="regional"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
 else
     awk -F'|' -v c="$_cat" '$2==c && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src"
 fi
+
 [ -s "$_src" ] || { warn_msg "Нет успешно проверенных DNS в выбранной категории."; pause; return 1; }
+
 _seen_urls="$TMP_DIR/auto-seen-urls"
 : > "$_seen_urls"
 i=1
 while IFS='|' read -r _id _cat2 _name _ms _st; do
-[ -n "$_id" ] || continue
-_url="$(normalize_url "$(dns_url "$_id")")"
-grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
-printf '%s\n' "$_url" >> "$_seen_urls"
-printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
-i=$((i+1))
-[ "$i" -gt 6 ] && break
+    [ -n "$_id" ] || continue
+    _url="$(normalize_url "$(dns_url "$_id")")"
+    [ -n "$_url" ] || continue
+    grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
+    printf '%s\n' "$_url" >> "$_seen_urls"
+    printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
+    i=$((i+1))
+    [ "$i" -gt 6 ] && break
 done < "$_src"
+
+# Для Hybrid в профиле bypass: если рабочих bypass меньше шести,
+# недостающие места заполняются лучшими clean DNS. Исходная категория
+# слота остаётся bypass, чтобы Watchdog позже вернул слот обратно.
+if [ "$_cat" = bypass ]; then
+    _n=0
+    [ -s "$_pool" ] && _n="$(awk 'END{print NR+0}' "$_pool")"
+    if [ "$_n" -lt 6 ]; then
+        _src_clean="$TMP_DIR/auto-clean-fallback"
+        : > "$_src_clean"
+        awk -F'|' '$2=="clean" && $5=="OK"{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n > "$_src_clean"
+        while IFS='|' read -r _id _cat2 _name _ms _st; do
+            [ "$_n" -ge 6 ] && break
+            [ -n "$_id" ] || continue
+            _url="$(normalize_url "$(dns_url "$_id")")"
+            [ -n "$_url" ] || continue
+            grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
+            printf '%s\n' "$_url" >> "$_seen_urls"
+            # сохраняем реальную категорию во временном наборе, но при записи слота
+            # ниже фиксируем целевую категорию bypass.
+            printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
+            _n=$((_n+1))
+        done < "$_src_clean"
+    fi
+fi
+
 [ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
 
+# Для all сохраняем приоритет: по одному лучшему кандидату из каждой категории,
+# затем общий рейтинг, без regional в основных шести слотах.
 if [ "$_cat" = all ]; then
     _src2="$TMP_DIR/auto-candidates-all"
     : > "$_src2"
@@ -2173,12 +2207,12 @@ if [ "$_cat" = all ]; then
     done
     cat "$_src" 2>/dev/null >> "$_src2"
     : > "$_pool"
-    _seen_urls="$TMP_DIR/auto-seen-urls"
     : > "$_seen_urls"
     i=1
     while IFS='|' read -r _id _cat2 _name _ms _st; do
         [ -n "$_id" ] || continue
-        _url="$(dns_url "$_id")"
+        _url="$(normalize_url "$(dns_url "$_id")")"
+        [ -n "$_url" ] || continue
         grep -qxF "$_url" "$_seen_urls" 2>/dev/null && continue
         printf '%s\n' "$_url" >> "$_seen_urls"
         printf '%s\n' "$_id|$_cat2|$_name|$_ms|$_st" >> "$_pool"
@@ -2188,13 +2222,31 @@ if [ "$_cat" = all ]; then
 fi
 
 i=1
+_n_bypass=0
+_n_clean_fallback=0
 while IFS='|' read -r _id _cat2 _name _ms _st; do
-[ -n "$_id" ] || continue
-eval "SLOT_$i=\"$_id\""
-eval "SLOT_${i}_CAT=\"$_cat2\""
-i=$((i+1))
-[ "$i" -gt 6 ] && break
+    [ -n "$_id" ] || continue
+    eval "SLOT_$i=\"$_id\""
+    if [ "$_cat" = bypass ]; then
+        eval "SLOT_${i}_CAT=\"bypass\""
+        [ "$_cat2" = clean ] && _n_clean_fallback=$((_n_clean_fallback+1)) || _n_bypass=$((_n_bypass+1))
+    else
+        eval "SLOT_${i}_CAT=\"$_cat2\""
+    fi
+    i=$((i+1))
+    [ "$i" -gt 6 ] && break
 done < "$_pool"
+
+# Если bypass-пула не хватило даже с clean, незаполненные слоты очищаем.
+while [ "$i" -le 6 ]; do
+    eval "SLOT_$i=\"\""
+    eval "SLOT_${i}_CAT=\"bypass\""
+    i=$((i+1))
+done
+
+if [ "$_cat" = bypass ] && [ "$_n_clean_fallback" -gt 0 ]; then
+    warn_msg "Рабочих DNS обхода не хватило: $_n_bypass из 6. Недостающие $_n_clean_fallback слота заполнены быстрыми clean DNS; целевая категория слотов сохранена как bypass."
+fi
 
 _ru1=""
 _yandex_ok="$(awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
@@ -2209,18 +2261,24 @@ else
         SLOT_RU_CAT="regional"
     else
         warn_msg "Нет проверенных региональных DNS. RU-сегмент оставлен без нового назначения."
+        SLOT_RU=""
+        SLOT_RU_CAT="regional"
     fi
 fi
 SLOT_RU_2="$(awk -F'|' -v skip="$_ru1" '$2=="regional" && $5=="OK" && $1!=skip{print $1;exit}' "$TEST_RESULTS" 2>/dev/null)"
-SLOT_RU_2_CAT="regional"
+if [ -n "$SLOT_RU_2" ]; then SLOT_RU_2_CAT="regional"; else SLOT_RU_2_CAT="regional"; fi
 
 save_config
 printf "${C_GREEN}✓ Автоматически выбран набор DNS без дублей.${C_NC}\n"
-for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
+for i in 1 2 3 4 5 6; do
+    eval "_v=\${SLOT_$i}"
+    [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"
+done
 [ -n "$SLOT_RU" ] && printf "  ${C_WHITE}RU: %s${C_NC}\n" "$(dns_name "$SLOT_RU")"
 [ -n "$SLOT_RU_2" ] && printf "  ${C_WHITE}RU2: %s${C_NC}\n" "$(dns_name "$SLOT_RU_2")"
 return 0
 }
+
 menu_best_actions() {
 goal="$1"; title="$2"
 while :; do
@@ -2996,7 +3054,7 @@ printf "  Автопроверка DoH: %b\n" "$(module_state_word watchdog "$WA
 [ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}⚠ force_dns стороннего DoH включён${C_NC}\n"
 printf "${C_BOLD}${C_PINK}🚀 БЫСТРАЯ НАСТРОЙКА${C_NC}\n"
 printf "  ${C_PINK}[1]${C_NC} 🚀 ${C_BOLD}МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД${C_NC}\n"
-printf "      ${C_WHITE}6 рабочих DoH + Yandex RU + автоматическая проверка${C_NC}\n"
+printf "      ${C_WHITE}6 рабочих DoH + Yandex RU + резерв clean при нехватке + автоматическая проверка${C_NC}\n"
 printf "\n${C_SECTION}DNS ПРОФИЛИ${C_NC}\n"
 printf "  ${C_GREEN}[2]${C_NC} ⚡ Максимальная скорость\n"
 printf "  ${C_BLUE}[3]${C_NC} 🛡 Максимальная безопасность\n"
