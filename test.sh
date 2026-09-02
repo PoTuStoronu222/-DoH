@@ -4,7 +4,7 @@ MANAGER_PATH="/usr/bin/dns-manager"
 # ==========================================
 # ОСНОВНЫЕ ПАРАМЕТРЫ
 # ==========================================
-VERSION="1.11-HYBRID"
+VERSION="1.13-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -27,18 +27,18 @@ TX_RESERVED_PORTS=""
 TX_PRE_SLOTS=""
 CORE_ONLY=0
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
-C_RED='\033[1;31m'
 C_GREEN='\033[1;32m'
-C_YELLOW='\033[1;33m'
-C_BLUE='\033[1;34m'
-C_MAGENTA='\033[1;35m'
-C_PINK='\033[1;35m'
+C_RED='\033[1;31m'
 C_CYAN='\033[1;36m'
-C_WHITE='\033[1;37m'
-C_BOLD='\033[1m'
+C_YELLOW='\033[1;33m'
+C_MAGENTA='\033[1;35m'
+C_BLUE='\033[0;34m'
 C_NC='\033[0m'
+C_BOLD='\033[1m'
+C_WHITE='\033[1;33m'
+C_PINK='\033[1;35m'
 C_TITLE='\033[1;33m'
-C_SECTION='\033[1;37m'
+C_SECTION='\033[1;33m'
 
 # ==========================================
 # ПРОВЕРКА И ОБНОВЛЕНИЕ
@@ -2644,13 +2644,13 @@ module_state_word() {
     _desired="$2"
     _real="$(check_module_state "$1")"
     if [ "$_desired" = 1 ] && [ "$_real" = 1 ]; then
-        printf "${C_GREEN}✓ ВКЛ • применено${C_NC}"
+        printf "${C_BOLD}${C_GREEN}✓ ВКЛ${C_NC} ${C_GREEN}• применено${C_NC}"
     elif [ "$_desired" = 1 ]; then
-        printf "${C_YELLOW}⚠ ВКЛ • ещё не применено${C_NC}"
+        printf "${C_BOLD}${C_YELLOW}⚠ ВКЛ${C_NC} ${C_YELLOW}• ещё не применено${C_NC}"
     elif [ "$_real" = 1 ]; then
-        printf "${C_PINK}↻ есть на роутере • в меню ВЫКЛ${C_NC}"
+        printf "${C_BOLD}${C_MAGENTA}↻ ЕСТЬ${C_NC} ${C_MAGENTA}• в меню ВЫКЛ${C_NC}"
     else
-        printf "${C_YELLOW}✗ ВЫКЛ${C_NC}"
+        printf "${C_BOLD}${C_RED}✗ ВЫКЛ${C_NC}"
     fi
 }
 # ==========================================
@@ -2661,28 +2661,31 @@ while :; do
 clear_screen
 menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
 
-printf "${C_SECTION}🛡 СЕТЬ И ОБХОД${C_NC}\n"
-printf "  ${C_YELLOW}[1]${C_NC} Блокировка QUIC          %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
-printf "  ${C_YELLOW}[2]${C_NC} Исправление MTU / MSS    %b\n" "$(module_state_word mtu "$MTU_FIX")"
-printf "  ${C_YELLOW}[3]${C_NC} Перехват всего DNS        %b\n" "$(module_state_word force "$FORCE_DOH")"
+printf "${C_BOLD}${C_YELLOW}🛡 СЕТЬ И ОБХОД${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[1]${C_NC} ${C_BOLD}${C_YELLOW}Блокировка QUIC${C_NC}                 %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
+printf "  ${C_CYAN}${C_BOLD}[2]${C_NC} ${C_BOLD}${C_YELLOW}Исправление MTU / MSS${C_NC}           %b\n" "$(module_state_word mtu "$MTU_FIX")"
+printf "  ${C_CYAN}${C_BOLD}[3]${C_NC} ${C_BOLD}${C_YELLOW}Перехват DNS через DoH${C_NC}         %b\n" "$(module_state_word force "$FORCE_DOH")"
 
-printf "\n${C_SECTION}⚡ ПРОИЗВОДИТЕЛЬНОСТЬ${C_NC}\n"
-printf "  ${C_YELLOW}[4]${C_NC} Sysctl и Conntrack        %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-printf "  ${C_YELLOW}[5]${C_NC} Кэш и скорость dnsmasq    %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-printf "  ${C_YELLOW}[6]${C_NC} Оптимизация Go-приложений %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
+printf "\n${C_BOLD}${C_YELLOW}⚡ ПРОИЗВОДИТЕЛЬНОСТЬ${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[4]${C_NC} ${C_BOLD}${C_YELLOW}Ускорение сети: Sysctl + Conntrack${C_NC} %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+printf "      ${C_BOLD}${C_YELLOW}↳ TCP, очередь соединений и conntrack для меньших задержек${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[5]${C_NC} ${C_BOLD}${C_YELLOW}Ускорение DNS-кэша (dnsmasq)${C_NC}   %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+printf "      ${C_BOLD}${C_YELLOW}↳ Больше кэш, быстрее повторные DNS-запросы${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[6]${C_NC} ${C_BOLD}${C_YELLOW}Оптимизация Go / Tailscale / TG WS${C_NC} %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
 
-printf "\n${C_SECTION}📡 СЕРВИСЫ И КЛИЕНТЫ${C_NC}\n"
-printf "  ${C_YELLOW}[7]${C_NC} NTP для клиентов LAN      %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-printf "  ${C_YELLOW}[8]${C_NC} Tailscale при WAN up      %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-printf "  ${C_YELLOW}[9]${C_NC} Фиксы телеметрии и связи  %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+printf "\n${C_BOLD}${C_YELLOW}📡 СЕРВИСЫ И КЛИЕНТЫ${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[7]${C_NC} ${C_BOLD}${C_YELLOW}NTP для клиентов LAN${C_NC}             %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+printf "  ${C_CYAN}${C_BOLD}[8]${C_NC} ${C_BOLD}${C_YELLOW}Tailscale при поднятии WAN${C_NC}       %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+printf "  ${C_CYAN}${C_BOLD}[9]${C_NC} ${C_BOLD}${C_YELLOW}Исправления телеметрии и связи${C_NC}  %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
 
-printf "\n${C_SECTION}🧹 ОБСЛУЖИВАНИЕ${C_NC}\n"
-printf "  ${C_YELLOW}[10]${C_NC} Очистка старого cron\n"
-printf "  ${C_YELLOW}[11]${C_NC} Автопроверка DoH          %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-printf "  ${C_YELLOW}[12]${C_NC} IP-заглушки (bogus-nxdomain)\n"
+printf "\n${C_BOLD}${C_YELLOW}🧹 ОБСЛУЖИВАНИЕ${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[10]${C_NC} ${C_BOLD}${C_YELLOW}Очистка старых cron-заданий${C_NC}\n"
+printf "       ${C_BOLD}${C_YELLOW}↳ Удаляет старые задания DNS Manager${C_NC}\n"
+printf "  ${C_CYAN}${C_BOLD}[11]${C_NC} ${C_BOLD}${C_YELLOW}Автопроверка DoH (Watchdog)${C_NC}     %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
+printf "  ${C_CYAN}${C_BOLD}[12]${C_NC} ${C_BOLD}${C_YELLOW}IP-заглушки провайдера${C_NC}            ${C_BOLD}${C_YELLOW}(bogus-nxdomain)${C_NC}\n"
 
-printf "\n${C_GREEN}[Enter]${C_NC} Назад\n\n"
-printf "${C_YELLOW}Выбор:${C_NC} "; safe_read c
+printf "\n${C_BOLD}${C_GREEN}[Enter]${C_NC} ${C_BOLD}${C_YELLOW}Назад${C_NC}\n\n"
+printf "${C_BOLD}${C_YELLOW}Выбор:${C_NC} "; safe_read c
 case "$c" in
 1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
 2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
