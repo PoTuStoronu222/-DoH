@@ -1,6 +1,6 @@
 #!/bin/sh
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="1.6-HYBRID"
+VERSION="1.6.1-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -35,6 +35,60 @@ C_BOLD='\033[1m'
 C_NC='\033[0m'
 C_TITLE='\033[1;33m'
 C_SECTION='\033[1;37m'
+
+UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/Zapret-Manager.sh"
+auto_update_manager() {
+    [ "${DNS_MANAGER_NO_UPDATE:-0}" = 1 ] && return 0
+    [ "$0" = "$MANAGER_PATH" ] || return 0
+    [ -f "$MANAGER_PATH" ] || return 0
+    [ -w "${MANAGER_PATH%/*}" ] || return 0
+
+    _upd_tmp="/tmp/dns-manager-update-$$-$(date +%s)"
+    _upd_old="/tmp/dns-manager-old-$$-$(date +%s)"
+    rm -f "$_upd_tmp" "$_upd_old" 2>/dev/null
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 4 --max-time 15 -o "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$_upd_tmp" "$UPDATE_URL" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
+    else
+        return 0
+    fi
+
+    [ -s "$_upd_tmp" ] || { rm -f "$_upd_tmp"; return 0; }
+    sed -n '1{/^#!\/bin\/sh$/!q};' "$_upd_tmp" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
+    grep -q '^VERSION="[^"]*"$' "$_upd_tmp" 2>/dev/null || { rm -f "$_upd_tmp"; return 0; }
+    sh -n "$_upd_tmp" >/dev/null 2>&1 || { rm -f "$_upd_tmp"; return 0; }
+
+    if command -v cmp >/dev/null 2>&1; then
+        cmp -s "$_upd_tmp" "$MANAGER_PATH" 2>/dev/null && { rm -f "$_upd_tmp"; return 0; }
+    else
+        _old_sum="$(cksum "$MANAGER_PATH" 2>/dev/null)"
+        _new_sum="$(cksum "$_upd_tmp" 2>/dev/null)"
+        [ -n "$_old_sum" ] && [ "$_old_sum" = "$_new_sum" ] && { rm -f "$_upd_tmp"; return 0; }
+    fi
+
+    _new_version="$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' "$_upd_tmp" | head -n1)"
+    [ -n "$_new_version" ] || { rm -f "$_upd_tmp"; return 0; }
+
+    cp -f "$MANAGER_PATH" "$_upd_old" 2>/dev/null || { rm -f "$_upd_tmp"; return 0; }
+    chmod 755 "$_upd_tmp" 2>/dev/null
+    if ! mv -f "$_upd_tmp" "$MANAGER_PATH" 2>/dev/null; then
+        mv -f "$_upd_old" "$MANAGER_PATH" 2>/dev/null
+        rm -f "$_upd_tmp" "$_upd_old" 2>/dev/null
+        return 0
+    fi
+
+    chmod 755 "$MANAGER_PATH" 2>/dev/null
+    rm -f "$_upd_old" 2>/dev/null
+    mkdir -p "$STATE_DIR" 2>/dev/null
+    touch "$UPDATE_MARKER" 2>/dev/null
+    log_msg "DNS Manager обновлён: $VERSION -> $_new_version"
+    printf "${C_GREEN}✓ DNS Manager обновлён до версии %s${C_NC}\n" "$_new_version"
+
+    DNS_MANAGER_NO_UPDATE=1 exec "$MANAGER_PATH" "$@"
+    return 0
+}
 log_msg() {
 mkdir -p "$BASE_DIR" "$STATE_DIR" 2>/dev/null
 printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null
@@ -2838,7 +2892,8 @@ run_watchdog() {
                         [ "$_attempt" -lt 3 ] && sleep 2
                         if [ "$_attempt" -lt 3 ]; then
                             _repl="$(watchdog_pick_replacement "$_slot" "$_used" "$_tried")"
-                            [ -n "$_repl" ] || break
+                            _repl_cat="$(dns_cat "$_repl")"
+                            { [ -n "$_repl" ] && [ "$_repl_cat" = "$_desired" ]; } || break
                         fi
                     done
                     if [ "$_success" = 1 ]; then
@@ -3002,6 +3057,8 @@ safe_read c
         esac
 done
 }
+auto_update_manager "$@"
+
 case "${1:-}" in
 watchdog|--watchdog|-w)
     preflight_readonly
