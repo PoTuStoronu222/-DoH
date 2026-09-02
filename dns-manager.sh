@@ -1,6 +1,6 @@
 #!/bin/sh
 MANAGER_PATH="/usr/bin/dns-manager"
-VERSION="1.7-HYBRID"
+VERSION="1.-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -38,7 +38,6 @@ C_SECTION='\033[1;37m'
 
 UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh"
 
-# 0, если $1 строго новее $2 (числовая часть X.Y)
 _ver_newer() {
 awk -v a="$1" -v b="$2" 'BEGIN{
   split(a, x, "[.-]"); split(b, y, "[.-]");
@@ -50,7 +49,6 @@ awk -v a="$1" -v b="$2" 'BEGIN{
 }
 
 auto_update_manager() {
-# Только ручной запуск: без аргументов и как установленный файл
 [ "$#" -eq 0 ] || return 0
 [ "${DNS_MANAGER_NO_UPDATE:-0}" = "1" ] && return 0
 [ "$0" = "$MANAGER_PATH" ] || return 0
@@ -71,7 +69,6 @@ if [ ! -s "$_upd_tmp" ]; then
   rm -f "$_upd_tmp" 2>/dev/null; return 0
 fi
 
-# Санити: это shell-скрипт с VERSION= и он проходит sh -n
 head -n 1 "$_upd_tmp" 2>/dev/null | grep -q '^#!/bin/sh' || { rm -f "$_upd_tmp"; return 0; }
 _new_version="$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' "$_upd_tmp" 2>/dev/null | head -n1)"
 if [ -z "$_new_version" ]; then rm -f "$_upd_tmp"; return 0; fi
@@ -689,8 +686,7 @@ RU_2) printf '%s' "5060";;
 esac
 }
 hybrid_prepare_selection() {
-# Явно выбранные пользователем слоты не перезаписываются.
-# Значения по умолчанию используются только для пустого профиля.
+
 if [ -z "$SLOT_1$SLOT_2$SLOT_3$SLOT_4$SLOT_5$SLOT_6$SLOT_RU" ]; then
 hybrid_set_defaults
 else
@@ -701,7 +697,6 @@ PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
 PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
 [ -n "$SLOT_RU" ] && PORT_RU="$HYBRID_PORT_RU"
 fi
-# Основной профиль использует шесть общих DNS и отдельный российский DNS.
 
 if [ "${HYBRID_AUTO_REPAIR:-0}" = 1 ] && [ -s "$TEST_RESULTS" ]; then
 : > "$TMP_DIR/hybrid-used"
@@ -921,7 +916,7 @@ url="$(normalize_url "$(dns_url "$id")")"; name="$(dns_name "$id")"
 [ -n "$url" ] || return 1
 local desired=""
 [ "$DNS_PROFILE" = "hybrid" ] && desired="$(hybrid_desired_port "$slot")"
-# 1. Проверяем, существует ли уже наш собственный экземпляр для этого URL
+
 local existing_own
 existing_own="$(find_own_doh_by_url "$url")"
 if [ -n "$existing_own" ]; then
@@ -929,7 +924,7 @@ local sec_idx="$(printf '%s' "$existing_own" | cut -d'|' -f1)"
 local current="$(printf '%s' "$existing_own" | cut -d'|' -f2)"
 local target="$current"
 if [ -n "$desired" ] && [ "$current" != "$desired" ]; then
-# В Hybrid-режиме у ролей фиксированные порты. Если порт занят чужим, ищем безопасный фоллбэк.
+
 port_used_anywhere "$desired"; rc=$?
 if [ "$rc" = 2 ]; then
 err_msg "Нельзя проверить порт $desired для $name."
@@ -961,7 +956,7 @@ eval "PORT_$slot=\"$target\""
 printf "  ${C_GREEN}+ %s → 127.0.0.1:%s${C_NC}\n" "$name" "$target"
 return 0
 fi
-# 2. Нашего экземпляра нет — проверяем, не занят ли URL сторонней/неизвестной секцией
+
 local existing_foreign
 existing_foreign="$(find_any_doh_by_url "$url")"
 if [ -n "$existing_foreign" ]; then
@@ -969,7 +964,7 @@ local owner="$(printf '%s' "$existing_foreign" | cut -d'|' -f3)"
 local p_old="$(printf '%s' "$existing_foreign" | cut -d'|' -f2)"
 warn_msg "$name уже используется другой/неизвестной секцией (порт $p_old, владелец=$(owner_ru "$owner")). Создаю отдельный экземпляр DNS Manager."
 fi
-# 3. Определяем целевой порт для нового экземпляра
+
 local target="$desired"
 if [ -n "$target" ]; then
 port_used_anywhere "$target"; rc=$?
@@ -986,10 +981,10 @@ free_port || return 1
 target="$FREE_PORT_RESULT"
 fi
 fi
-# 4. Создаем новую секцию с нуля
+
 local sec
 sec="$(uci add https-dns-proxy https-dns-proxy 2>/dev/null)" || return 1
-# Берем только первый IP-адрес на случай, если там несколько через пробел
+
 local b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
 [ -z "$b_list" ] && b_list="1.1.1.1"
 uci set "https-dns-proxy.$sec.bootstrap_dns=$b_list" || return 1
@@ -1027,7 +1022,6 @@ EOF_DUP
 done < "$dup_ports"
 }
 reconcile_selected_own_doh() {
-    # Оставляем выбранные собственные DoH и удаляем только устаревшие собственные секции.
     _keep="$TMP_DIR/keep-own-doh"
     : > "$_keep"
     for s in 1 2 3 4 5 6 RU RU_2; do
@@ -1070,7 +1064,6 @@ validate_selected_slots() {
     return 0
 }
 get_dnsmasq_section() {
-# В первую очередь используется dnsmasq, привязанный к LAN.
 _secs="$(uci show dhcp 2>/dev/null | sed -n 's/^dhcp\.\([^.=]*\)=dnsmasq$/\1/p')"
 for _s in $_secs; do
 _iface="$(uci -q get "dhcp.$_s.interface" 2>/dev/null)"
@@ -1087,7 +1080,6 @@ uci -q get "$target" 2>/dev/null | tr ' ' '\n' | sed "s/^['\"]//; s/['\"]$//" | 
 reconcile_dnsmasq() {
     sec="$(get_dnsmasq_section)"
     uci -q get "dhcp.$sec" >/dev/null 2>&1 || return 1
-    # Сохраняем прежние upstream и связанные параметры для функции «удалить изменения DNS Manager».
     [ -s "$PREV_DNSMASQ" ] || {
   {
     printf 'SERVER\n'
@@ -1410,7 +1402,6 @@ apply_tailscale_hotplug() {
 [ "${TAILSCALE_HOTPLUG:-0}" = 1 ] || return 0
 f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
 mkdir -p /etc/hotplug.d/iface 2>/dev/null
-# Если на нашем месте лежит старый скрипт без нашей метки — сохраняем копию.
 if [ -f "$f" ] && ! grep -q '^# DNS_MANAGER_TAILSCALE_HOTPLUG=1$' "$f" 2>/dev/null; then
 cp -p "$f" "$f.previous" 2>/dev/null
 info_msg "Старый скрипт $f сохранён в $f.previous"
@@ -1441,8 +1432,6 @@ fi
 }
 remove_tailscale_hotplug() {
 f="/etc/hotplug.d/iface/99-dns-manager-tailscale"
-# Путь 99-dns-manager-* — наша зона имён: любой файл здесь считается
-# артефактом DNS Manager (включая старые версии) и удаляется при выключении.
 if [ -f "$f" ]; then
 rm -f "$f"
 if [ -f "$f.previous" ]; then
@@ -1648,7 +1637,7 @@ if nslookup example.com 127.0.0.1 >/dev/null 2>&1; then dns_ok=1; break; fi
 elif command -v dig >/dev/null 2>&1; then
 if dig +time=2 +tries=1 @127.0.0.1 example.com A >/dev/null 2>&1; then dns_ok=1; break; fi
 else
-dns_ok=1; break # Если нет утилит тестирования, пропускаем эту проверку
+dns_ok=1; break
 fi
 sleep 1
 done
@@ -1690,7 +1679,6 @@ while IFS='|' read -r f key existed; do
 cur="$(file_hash "$f")"
 before="$(cat "$TX_DIR/$key.before" 2>/dev/null)"
 after="$(cat "$TX_DIR/$key.after" 2>/dev/null)"
-# Файл восстанавливается только если после применения его никто не менял.
 if [ -n "$after" ] && [ "$cur" != "$after" ]; then
 warn_msg "Не откатываю $f: обнаружено изменение после применения. Чужие изменения сохранены. Проверьте конфигурацию вручную."
 continue
@@ -1718,7 +1706,6 @@ log_tx "TX" "transaction" "COMMIT" "OK" "dir=$TX_DIR"
 # ----- Hybrid port reconciler -----
 hybrid_reconcile_existing() {
 [ "$DNS_PROFILE" = hybrid ] || return 0
-# 1. Удаляем только дубликаты управляемых менеджером секций для каждого URL
 for id in mafioznik comss_bypass astracat malw_link comss_ru vppay yandex_ru; do
 local url="$(normalize_url "$(dns_url "$id")")"
 [ -n "$url" ] || continue
@@ -1735,7 +1722,6 @@ fi
 fi
 done
 done
-# 2. Перемещаем менеджерские объекты, блокирующие другие выбранные роли, на временные свободные порты
 for slot in 1 2 3 4 5 6 RU; do
 eval "want=\${SLOT_$slot}"
 [ -n "$want" ] || continue
@@ -1905,7 +1891,6 @@ grep '^dnsmasq|server|' "$OWNERSHIP" 2>/dev/null | while IFS='|' read -r _type _
 uci -q del_list "dhcp.$sec.server=$val" 2>/dev/null
 done
 uci commit dhcp 2>/dev/null
-# При ручном удалении своих изменений возвращаем DNS-upstream, существовавшие до установки менеджера.
 if [ -s "$PREV_DNSMASQ" ]; then
     _prev_sec="$(sed -n 's/^SECTION=//p' "$PREV_DNSMASQ" | head -n1)"
     [ -n "$_prev_sec" ] || _prev_sec="$sec"
@@ -2180,8 +2165,6 @@ i=$((i+1))
 done < "$_src"
 [ -s "$_pool" ] || { warn_msg "Не удалось сформировать набор DNS."; pause; return 1; }
 
-# Для режима "все категории" в общий пул попадает максимум по одному быстрому DNS из каждой категории,
-# после чего набор дополняется лучшими по скорости. Региональная категория в этот пул не входит.
 if [ "$_cat" = all ]; then
     _src2="$TMP_DIR/auto-candidates-all"
     : > "$_src2"
@@ -2213,7 +2196,6 @@ i=$((i+1))
 [ "$i" -gt 6 ] && break
 done < "$_pool"
 
-# RU-сегмент заполняется только региональными DNS. Yandex RU всегда имеет приоритет.
 _ru1=""
 _yandex_ok="$(awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
 if [ "$_yandex_ok" = yes ]; then
@@ -2831,7 +2813,6 @@ run_watchdog() {
         return 0
     fi
 
-    # Один раз за цикл обновляем каталог, если результаты устарели.
     _age=999999999
     if [ -f "$TEST_RESULTS" ]; then
         _mtime="$(stat -c %Y "$TEST_RESULTS" 2>/dev/null || printf '0')"
@@ -2866,7 +2847,6 @@ run_watchdog() {
         _is_fallback=0
         [ "$_current_cat" != "$_desired" ] && _is_fallback=1
 
-      # Если текущий DNS жив, приоритет — вернуть его в целевую категорию.
 if watchdog_check_slot "$_id"; then
     if [ "$_is_fallback" = 1 ] && [ "$_returned" = 0 ]; then
         _tried="$TMP_DIR/watchdog-tried-${_slot}-$$"
@@ -2912,12 +2892,10 @@ if watchdog_check_slot "$_id"; then
         fi
     fi
     
-    # DNS жив и (либо не требовал возврата, либо возврат не удался/не нужен)
     log_msg "DoH слот $_slot: $(dns_name "$_id") работает."
     continue
 fi
 
-# Сюда попадаем только если первая проверка показала, что DNS мертв
 sleep 5
 if watchdog_check_slot "$_id"; then
     log_msg "DoH слот $_slot: первый сбой не подтвердился."
@@ -2988,7 +2966,6 @@ apply_watchdog() {
     [ "$_interval" -le 59 ] 2>/dev/null || _interval=59
     WATCHDOG_INTERVAL="$_interval"
 
-    # Удаляем только прежнюю строку Watchdog DNS Manager.
     awk '!/^[[:space:]]*\*\/[0-9]+[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*.*dns-manager[[:space:]]+(watchdog|-w|--watchdog)([[:space:]]|$)/{print}' "$f" > "$f.tmp" || return 1
     mv "$f.tmp" "$f" || return 1
 
@@ -3083,7 +3060,6 @@ watchdog|--watchdog|-w)
     ;;
 esac
 
-# ENTRY: сюда доходит только ручной запуск.
 preflight_readonly
 init_dirs
 auto_update_manager        
