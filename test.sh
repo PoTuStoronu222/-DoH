@@ -2609,6 +2609,117 @@ apply_watchdog() {
     save_config
 }
 
+menu_best_actions() {
+goal="$1"; title="$2"
+while :; do
+menu_header "⭐ $title"
+menu_section "ДЕЙСТВИЯ"
+menu_item "[1]" "⚡ Автонастройка: подобрать и применить безопасно"
+menu_item "[2]" "⭐ Показать лучшие варианты"
+menu_item "[3]" "⚙ Выбрать DNS вручную"
+menu_back
+menu_prompt
+safe_read a
+case "$a" in
+1)
+if auto_fill_slots "$goal"; then
+CORE_ONLY=1
+apply_settings
+CORE_ONLY=0
+fi
+;;
+2)
+clear_screen
+menu_header "⭐ ЛУЧШИЕ ВАРИАНТЫ — $title"
+menu_section "ТОП-5 ПО ВРЕМЕНИ ОТВЕТА"
+show_best_category "$goal" 5 | while IFS='|' read -r _id _cat _name _ms _st; do
+printf "  ${C_CYAN}${C_BOLD}•${C_NC} ${C_GREEN}${C_BOLD}%-34s${C_NC} ${C_YELLOW}%s мс${C_NC}\n" "$_name" "$_ms"
+done
+pause
+;;
+3) menu_slots; return;;
+'') return;;
+*) warn_msg "Неверный пункт."; pause;;
+esac
+done
+}
+
+# ==========================================
+# ВЫБОР DNS-СЕРВЕРА ДЛЯ СЛОТА
+# ==========================================
+
+module_state_word() {
+    _desired="$2"
+    _real="$(check_module_state "$1")"
+    if [ "$_desired" = 1 ] && [ "$_real" = 1 ]; then
+        printf "${C_BOLD}${C_GREEN}✓ ВКЛ${C_NC} ${C_CYAN}${C_BOLD}• применено${C_NC}"
+    elif [ "$_desired" = 1 ]; then
+        printf "${C_BOLD}${C_YELLOW}⚠ ВКЛ${C_NC} ${C_CYAN}${C_BOLD}• ожидает применения${C_NC}"
+    elif [ "$_real" = 1 ]; then
+        printf "${C_BOLD}${C_MAGENTA}↻ ЕСТЬ${C_NC} ${C_CYAN}${C_BOLD}• физически включено${C_NC}"
+    else
+        printf "${C_BOLD}${C_RED}✗ ВЫКЛ${C_NC}"
+    fi
+}
+
+# ==========================================
+# МЕНЮ ДОПОЛНИТЕЛЬНЫХ НАСТРОЕК
+# ==========================================
+
+quick_max_bypass() {
+menu_header "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
+printf "${C_WHITE}Сначала роутер будет перечитан, затем весь каталог DNS будет протестирован.${C_NC}\n"
+printf "${C_WHITE}После теста будут выбраны только реально доступные кандидаты.${C_NC}\n"
+printf "${C_YELLOW}⏳ Идёт параллельный перебор всех DoH-эндпоинтов — это не самый быстрый шаг.${C_NC}\n"
+menu_section "ЧТО БУДЕТ НАСТРОЕНО"
+menu_note "✓ 6 разных рабочих DoH для общего пула"
+menu_note "✓ Yandex RU для .ru / .su / .рф"
+menu_note "✓ dnsmasq :53"
+menu_note "✓ allservers=1"
+menu_note "✓ уникальные порты"
+menu_note "✓ чужие DoH/Firewall не присваиваются менеджеру"
+menu_note "✓ проверка после применения + автоматический откат"
+printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN при блокировках по IP, SNI, DPI и HTTP.\n"
+test_dns_catalog
+[ -s "$TEST_RESULTS" ] || return
+DNS_PROFILE="hybrid"
+auto_fill_slots bypass
+SLOT_RU="yandex_ru"
+SLOT_RU_2=""
+SLOT_RU_CAT="regional"
+SLOT_RU_2_CAT="regional"
+TLD_RU_ENABLED=1
+TLD_SPLIT=1
+BALANCER_ENABLED=1
+PORT_1="$HYBRID_PORT_1"; PORT_2="$HYBRID_PORT_2"; PORT_3="$HYBRID_PORT_3"
+PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
+PORT_RU="$HYBRID_PORT_RU"; PORT_RU_2=""
+save_config
+CORE_ONLY=1
+apply_settings
+CORE_ONLY=0
+}
+# ==========================================
+# ПРОВЕРКА ЗАВИСИМОСТЕЙ
+# ==========================================
+dependency_preflight(){
+run_discovery >/dev/null 2>&1 || true
+printf "${C_TITLE}📦 ПРОВЕРКА ЗАВИСИМОСТЕЙ${C_NC}\n"
+printf '  curl              : %b\n' "$(state_word "$HAS_CURL")"
+printf '  dig               : %b\n' "$(state_word "$HAS_DIG")"
+printf '  https-dns-proxy   : %b\n' "$(state_word "$HAS_HDP")"
+if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
+printf '  CA-сертификаты    : %b✓ ВКЛ%b\n' "$C_GREEN" "$C_NC"
+else
+printf '  CA-сертификаты    : %b✗ НЕТ%b\n' "$C_RED" "$C_NC"
+fi
+}
+# ==========================================
+# WATCHDOG — ПРОВЕРКА DoH
+# ==========================================
+# WATCHDOG — ВЫБОР КАТЕГОРИИ
+# ==========================================
+
 # ==========================================
 # ГЛАВНОЕ МЕНЮ
 # ==========================================
