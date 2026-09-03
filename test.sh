@@ -1933,12 +1933,6 @@ fi
 printf "\n${C_WHITE}Текущее состояние до применения:${C_NC}\n"
 printf "  dnsmasq: %b\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  DoH: %s (настройка %s / внешние %s / без определения %s)\n" "$DOH_TOTAL" "$DOH_OURS" "$DOH_FOREIGN" "$DOH_UNKNOWN"
-if [ "$DOH_TOTAL" -gt 0 ]; then
-printf "  ${C_PINK}↻ Найденные DoH после подтверждения будут заменены выбранной схемой DNS Manager.${C_NC}\n"
-printf "  ${C_YELLOW}   До изменения создаётся снимок для автоматического отката при ошибке.${C_NC}\n"
-fi
-printf "\n${C_YELLOW}Только после подтверждения будет создан снимок и внесены изменения.${C_NC}\n"
-printf "${C_YELLOW}ℹ Если желаемый порт занят чужим сервисом, слот уедет на ближайший свободный — итог будет показан после применения.${C_NC}\n"
 validate_selected_slots || return 1
 confirm_action "Применить показанную выше конфигурацию?" || return
 TX_ID="$(date +%Y%m%d-%H%M%S)-$$"
@@ -2905,35 +2899,23 @@ menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
 
 menu_section "🛡 СЕТЬ И ОБХОД"
 menu_item_state "[1]" "Блокировка QUIC" "$(module_state_word quic "$BLOCK_QUIC")"
-menu_note_plain "Запрещает QUIC по UDP/80 и UDP/443."
 menu_item_state "[2]" "Исправление MTU / MSS" "$(module_state_word mtu "$MTU_FIX")"
-menu_note_plain "Подбирает сетевые параметры для снижения фрагментации."
 menu_item_state "[3]" "Принудительный DNS через DoH" "$(module_state_word force "$FORCE_DOH")"
-menu_note_plain "Перехватывает обычный DNS и направляет его в настроенный DoH."
 
 menu_section "⚡ ПРОИЗВОДИТЕЛЬНОСТЬ"
 menu_item_state "[4]" "Оптимизация TCP и Conntrack" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-menu_note_plain "Настраивает sysctl и таблицу соединений для меньших задержек."
 menu_item_state "[5]" "Кэширование DNS-запросов" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-menu_note_plain "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
 menu_item_state "[6]" "Оптимизация Go-сервисов" "$(module_state_word go "$GO_OPTIMIZE")"
-menu_note_plain "Настраивает память и служебные параметры Go / Tailscale / TG WS."
 
 menu_section "📡 СЕРВИСЫ И КЛИЕНТЫ"
 menu_item_state "[7]" "NTP для клиентов LAN" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-menu_note_plain "Выдаёт клиентам роутера корректное время через NTP."
 menu_item_state "[8]" "Tailscale при поднятии WAN" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-menu_note_plain "Перезапускает Tailscale после восстановления WAN."
 menu_item_state "[9]" "Исправления телеметрии и связи" "$(module_state_word client_fixes "$CLIENT_FIXES")"
-menu_note_plain "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
 
 menu_section "🧹 ОБСЛУЖИВАНИЕ"
 menu_item "[10]" "Очистка старых cron-заданий"
-menu_note_plain "Разовая очистка старых заданий DNS Manager."
 menu_item_state "[11]" "Автопроверка DoH (Watchdog)" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-menu_note_plain "Проверяет рабочие DoH и заменяет недоступные слоты."
 menu_item "[12]" "IP-заглушки провайдера"
-menu_note_plain "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
 
 menu_back
 menu_prompt
@@ -3078,18 +3060,6 @@ pause
 }
 quick_max_bypass() {
 menu_header "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
-printf "${C_WHITE}Сначала роутер будет перечитан, затем весь каталог DNS будет протестирован.${C_NC}\n"
-printf "${C_WHITE}После теста будут выбраны только реально доступные кандидаты.${C_NC}\n"
-printf "${C_YELLOW}⏳ Идёт параллельный перебор всех DoH-эндпоинтов — это не самый быстрый шаг.${C_NC}\n"
-menu_section "ЧТО БУДЕТ НАСТРОЕНО"
-menu_note "✓ 6 разных рабочих DoH для общего пула"
-menu_note "✓ Yandex RU для .ru / .su / .рф"
-menu_note "✓ dnsmasq :53"
-menu_note "✓ allservers=1"
-menu_note "✓ уникальные порты"
-menu_note "✓ чужие DoH/Firewall не присваиваются менеджеру"
-menu_note "✓ проверка после применения + автоматический откат"
-printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN при блокировках по IP, SNI, DPI и HTTP.\n"
 test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
 DNS_PROFILE="hybrid"
@@ -3149,7 +3119,6 @@ printf "  ${C_YELLOW}${C_BOLD}Watchdog${C_NC}            %b\n" "$(module_state_w
 
 menu_section "БЫСТРЫЙ ЗАПУСК"
 menu_item "[1]" "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
-menu_note "6 DoH + Yandex RU + резерв + Watchdog"
 
 menu_section "DNS ПРОФИЛИ"
 menu_item "[2]" "⚡ Максимальная скорость"
