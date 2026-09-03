@@ -44,7 +44,7 @@ C_SECTION='\033[1;33m'
 # ==========================================
 # ПРОВЕРКА И ОБНОВЛЕНИЕ
 # ==========================================
-UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/dns-manager.sh"
+UPDATE_URL="https://raw.githubusercontent.com/PoTuStoronu222/DNS-Manager/main/test.sh"
 
 _ver_newer() {
 awk -v a="$1" -v b="$2" 'BEGIN{
@@ -2666,6 +2666,382 @@ module_state_word() {
 # МЕНЮ ДОПОЛНИТЕЛЬНЫХ НАСТРОЕК
 # ==========================================
 
+menu_slots() {
+while :; do
+menu_header "⚙ DNS-ПРОФИЛЬ"
+if [ "$DNS_PROFILE" = "hybrid" ]; then
+printf "${C_YELLOW}${C_BOLD}Профиль:${C_NC} ${C_GREEN}${C_BOLD}Hybrid SmartDNS${C_NC}\n"
+else
+printf "${C_YELLOW}${C_BOLD}Профиль:${C_NC} ${C_GREEN}${C_BOLD}пользовательский${C_NC}\n"
+fi
+menu_section "ОБЩИЕ СЛОТЫ"
+printf "  ${C_YELLOW}${C_BOLD}%-4s %-34s %-8s${C_NC}\n" "№" "DNS" "ПОРТ"
+printf "  ──────────────────────────────────────────────────────────\n"
+for s in 1 2 3 4 5 6; do
+eval "v=\${SLOT_$s}"
+eval "p=\${PORT_$s}"
+[ "$DNS_PROFILE" = "hybrid" ] && p="$(hybrid_desired_port "$s")"
+printf "  ${C_CYAN}${C_BOLD}%-4s${C_NC} ${C_GREEN}${C_BOLD}%-34s${C_NC} ${C_YELLOW}${C_BOLD}%-8s${C_NC}\n" "$s" "$(dns_name "$v")" "${p:-авто}"
+done
+menu_section "РЕГИОНАЛЬНЫЕ СЛОТЫ"
+printf "  ${C_CYAN}${C_BOLD}[7]${C_NC} ${C_GREEN}${C_BOLD}RU${C_NC}   ${C_GREEN}%-30s${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "${PORT_RU:-$HYBRID_PORT_RU}"
+printf "  ${C_CYAN}${C_BOLD}[8]${C_NC} ${C_GREEN}${C_BOLD}RU2${C_NC}  ${C_GREEN}%-30s${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$(dns_name "$SLOT_RU_2")" "${PORT_RU_2:-авто}"
+menu_section "ДЕЙСТВИЯ"
+menu_item "[9]" "⚡ Автоподбор лучших"
+menu_item "[10]" "⭐ Восстановить стандартный Hybrid"
+menu_back
+menu_prompt
+safe_read c
+[ -z "$c" ] && return
+case "$c" in
+1|2|3|4|5|6) select_slot "$c";;
+7) select_slot RU;;
+8) select_slot RU_2;;
+9) show_best;;
+10) hybrid_set_defaults; save_config; ok_msg "Стандартный Hybrid SmartDNS восстановлен: 5053–5058 + Yandex 5059."; pause;;
+*) warn_msg "Неверный пункт."; pause;;
+esac
+done
+}
+
+menu_bootstrap() {
+menu_header "🎯 BOOTSTRAP DNS"
+printf "${C_YELLOW}${C_BOLD}Текущие серверы:${C_NC}\n  ${C_GREEN}%s${C_NC}\n" "$BOOTSTRAP_DNS"
+menu_section "ГОТОВЫЕ ПРОФИЛИ"
+menu_item "[1]" "Независимые: Yandex + AdGuard + Cloudflare + Google + Quad9"
+menu_item "[2]" "Cloudflare + Yandex"
+menu_item "[3]" "Только Cloudflare"
+menu_item "[4]" "Ввести свои IPv4"
+menu_back
+menu_prompt
+safe_read c
+case "$c" in
+1) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,8.8.8.8,8.8.4.4,9.9.9.9,149.112.112.112";;
+2) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1";;
+3) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1";;
+4) printf "${C_YELLOW}${C_BOLD}IPv4 › ${C_NC}"; safe_read BOOTSTRAP_DNS;;
+*) return;;
+esac
+save_config
+if confirm_action "Применить выбранный Bootstrap сейчас?"; then apply_bootstrap_only; pause; fi
+}
+
+menu_bogus() {
+apply_bogus
+}
+module_state() {
+key="$1"; val="$2"
+[ "$val" = 1 ] || { printf 'ВЫКЛ'; return; }
+case "$key" in
+balance) printf 'ВКЛ • ожидает применения';;
+tld) printf 'ВКЛ • ожидает применения';;
+quic) [ "$QUIC_OURS" = 1 ] || [ "$QUIC_FOREIGN" = 1 ] && printf 'ВКЛ • правило найдено' || printf 'ВКЛ • ожидает применения';;
+mtu) printf 'ВКЛ • ожидает применения';;
+ntp) printf 'ВКЛ • IP-профиль настроен';;
+sysctl) printf 'ВКЛ • ожидает применения';;
+go) printf 'ВКЛ • ожидает применения';;
+*) printf 'ВКЛ';;
+esac
+}
+
+toggle_and_apply_dnsmasq() {
+reconcile_dnsmasq >/dev/null 2>&1
+/etc/init.d/dnsmasq restart >/dev/null 2>&1
+save_config
+}
+remove_sysctl_base() {
+f="/etc/sysctl.d/90-dns-manager.conf"
+sf="$STATE_DIR/sysctl-before.conf"
+[ -f "$f" ] || return 0
+for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
+old="$(awk -F'|' -v k="$kv" '$1==k{print $2;exit}' "$sf" 2>/dev/null)"
+[ -n "$old" ] && [ "$old" != unknown ] && sysctl -w "$kv=$old" >/dev/null 2>&1 || true
+done
+rm -f "$f" "$sf"
+}
+
+remove_go_optimize() {
+for f in /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale; do
+bak="$f.dns-manager.bak"
+[ -f "$bak" ] || continue
+curh="$(file_hash "$f")"; managedh="$(cat "$STATE_DIR/$(basename "$f").managed.sha256" 2>/dev/null)"
+if [ -n "$managedh" ] && [ -n "$curh" ] && [ "$curh" != "$managedh" ]; then
+warn_msg "Не восстанавливаю $f: файл изменён вручную."
+continue
+fi
+mv "$bak" "$f" 2>/dev/null && rm -f "$STATE_DIR/$(basename "$f").managed.sha256"
+done
+}
+
+reload_fw() {
+if [ "$SYS_FW" = fw4 ]; then /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+else /etc/init.d/firewall restart >/dev/null 2>&1; fi
+}
+
+apply_extras_now() {
+case "$1" in
+balance|tld)   reconcile_dnsmasq >/dev/null 2>&1; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+ntp)           [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback;;
+quic)          apply_quic_toggle;;
+mtu)           apply_mtu_toggle;;
+sysctl)        [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || remove_sysctl_base;;
+go)            [ "$GO_OPTIMIZE" = 1 ] && apply_go || remove_go_optimize;;
+force)         [ "$FORCE_DOH" = 1 ] && apply_dns_force || remove_dns_force; reload_fw;;
+ntp_clients)   [ "$NTP_CLIENTS" = 1 ] && apply_ntp_clients || remove_ntp_clients; /etc/init.d/dnsmasq restart >/dev/null 2>&1; reload_fw;;
+dnsmasq_perf)  [ "$DNSMASQ_PERF" = 1 ] && apply_dnsmasq_perf || remove_dnsmasq_perf; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+client_fixes)  [ "$CLIENT_FIXES" = 1 ] && apply_client_fixes || remove_client_fixes; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
+sysctl_ext)    [ "$SYSCTL_EXTENDED" = 1 ] && apply_sysctl_extended || remove_sysctl_extended;;
+ts_hotplug)    [ "$TAILSCALE_HOTPLUG" = 1 ] && apply_tailscale_hotplug || remove_tailscale_hotplug;;
+cron)          cleanup_manager_cron;;
+esac
+save_config
+}
+
+apply_bootstrap_only() {
+b_list="$(printf '%s' "$BOOTSTRAP_DNS" | tr ',' ' ')"
+i=0; changed=0
+while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
+if [ "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)" = 1 ]; then
+uci set "https-dns-proxy.@https-dns-proxy[$i].bootstrap_dns=$b_list"
+changed=1
+fi
+i=$((i+1))
+done
+if [ "$changed" = 1 ]; then
+uci commit https-dns-proxy 2>/dev/null
+/etc/init.d/https-dns-proxy restart >/dev/null 2>&1
+ok_msg "Bootstrap обновлён для наших DoH-инстансов. Ядро не тронуто."
+else
+info_msg "Наших DoH-секций нет — bootstrap будет использован при следующем применении."
+fi
+save_config
+}
+
+apply_quic_toggle() {
+    if [ "$BLOCK_QUIC" != 1 ]; then
+        delete_manager_quic_rules
+    else
+        apply_quic || return 1
+    fi
+    uci commit firewall >/dev/null 2>&1 || return 1
+    if [ "$SYS_FW" = fw4 ]; then
+        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+    else
+        /etc/init.d/firewall restart >/dev/null 2>&1
+    fi
+    save_config
+}
+
+apply_mtu_toggle() {
+uci -q set firewall.@defaults[0].mtu_fix="$MTU_FIX"
+uci commit firewall >/dev/null 2>&1
+if [ "$SYS_FW" = "fw4" ]; then
+/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
+else
+/etc/init.d/firewall restart >/dev/null 2>&1
+fi
+save_config
+}
+check_module_state() {
+    sec="$(get_dnsmasq_section)"
+    case "$1" in
+        balance) [ "$(uci -q get "dhcp.$sec.allservers" 2>/dev/null)" = 1 ] && printf 1 || printf 0 ;;
+        tld) uci -q get "dhcp.$sec.server" 2>/dev/null | tr ' ' '\n' | grep -q '^/ru/' && printf 1 || printf 0 ;;
+        ntp) [ "$(uci -q get system.ntp.use_dhcp 2>/dev/null)" = 0 ] && uci -q get system.ntp.server 2>/dev/null | grep -qE '([0-9]{1,3}\.){3}[0-9]{1,3}' && printf 1 || printf 0 ;;
+        quic) [ "$QUIC_OURS" = 1 ] && printf 1 || printf 0 ;;
+        mtu) [ "$(uci -q get firewall.@defaults[0].mtu_fix 2>/dev/null)" = 1 ] && printf 1 || printf 0 ;;
+        sysctl) [ -f /etc/sysctl.d/90-dns-manager.conf ] && printf 1 || printf 0 ;;
+        sysctl_ext) [ -f /etc/sysctl.d/91-dns-manager-extended.conf ] && printf 1 || printf 0 ;;
+        go) grep -qs 'DNS_MANAGER_GOMEMLIMIT' /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale 2>/dev/null && printf 1 || printf 0 ;;
+        force) uci -q get firewall.dns_manager_dns_redirect >/dev/null 2>&1 && printf 1 || printf 0 ;;
+        ntp_clients) uci -q get firewall.dns_manager_ntp_client >/dev/null 2>&1 && printf 1 || printf 0 ;;
+        dnsmasq_perf) [ "$(uci -q get "dhcp.$sec.cachesize" 2>/dev/null)" = 1000 ] && printf 1 || printf 0 ;;
+        client_fixes) [ -f /etc/dnsmasq.d/91-dns-manager-client-fixes.conf ] && printf 1 || printf 0 ;;
+        ts_hotplug) [ -f /etc/hotplug.d/iface/99-dns-manager-tailscale ] && printf 1 || printf 0 ;;
+        cron) [ "${CRON_CLEANUP:-0}" = 1 ] && printf 1 || printf 0 ;;
+        watchdog) grep -qsE '^[[:space:]]*\*/[0-9]+[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*.*dns-manager[[:space:]]+(watchdog|-w|--watchdog)([[:space:]]|$)' /etc/crontabs/root 2>/dev/null && printf 1 || printf 0 ;;
+        *) printf 0 ;;
+    esac
+}
+
+
+menu_extras() {
+while :; do
+menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
+
+menu_section "🛡 СЕТЬ И ОБХОД"
+menu_item_state "[1]" "Блокировка QUIC" "$(module_state_word quic "$BLOCK_QUIC")"
+menu_note_plain "Запрещает QUIC по UDP/80 и UDP/443."
+menu_item_state "[2]" "Исправление MTU / MSS" "$(module_state_word mtu "$MTU_FIX")"
+menu_note_plain "Подбирает сетевые параметры для снижения фрагментации."
+menu_item_state "[3]" "Принудительный DNS через DoH" "$(module_state_word force "$FORCE_DOH")"
+menu_note_plain "Перехватывает обычный DNS и направляет его в настроенный DoH."
+
+menu_section "⚡ ПРОИЗВОДИТЕЛЬНОСТЬ"
+menu_item_state "[4]" "Оптимизация TCP и Conntrack" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+menu_note_plain "Настраивает sysctl и таблицу соединений для меньших задержек."
+menu_item_state "[5]" "Кэширование DNS-запросов" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+menu_note_plain "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
+menu_item_state "[6]" "Оптимизация Go-сервисов" "$(module_state_word go "$GO_OPTIMIZE")"
+menu_note_plain "Настраивает память и служебные параметры Go / Tailscale / TG WS."
+
+menu_section "📡 СЕРВИСЫ И КЛИЕНТЫ"
+menu_item_state "[7]" "NTP для клиентов LAN" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+menu_note_plain "Выдаёт клиентам роутера корректное время через NTP."
+menu_item_state "[8]" "Tailscale при поднятии WAN" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+menu_note_plain "Перезапускает Tailscale после восстановления WAN."
+menu_item_state "[9]" "Исправления телеметрии и связи" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+menu_note_plain "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
+
+menu_section "🧹 ОБСЛУЖИВАНИЕ"
+menu_item "[10]" "Очистка старых cron-заданий"
+menu_note_plain "Разовая очистка старых заданий DNS Manager."
+menu_item_state "[11]" "Автопроверка DoH (Watchdog)" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
+menu_note_plain "Проверяет рабочие DoH и заменяет недоступные слоты."
+menu_item "[12]" "IP-заглушки провайдера"
+menu_note_plain "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
+
+menu_back
+menu_prompt
+safe_read c
+case "$c" in
+1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
+2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
+3) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
+4)
+if [ "$SYSCTL_TUNING" = 1 ]; then
+SYSCTL_TUNING=0; SYSCTL_EXTENDED=0
+else
+SYSCTL_TUNING=1; SYSCTL_EXTENDED=1
+fi
+apply_extras_now sysctl
+apply_extras_now sysctl_ext
+pause;;
+5) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
+6) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
+7) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
+8) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
+9) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
+10) cleanup_manager_cron; CRON_CLEANUP=1; save_config; pause;;
+11) [ "$WATCHDOG_ENABLED" = 1 ] && WATCHDOG_ENABLED=0 || WATCHDOG_ENABLED=1; apply_watchdog; pause;;
+12) menu_bogus;;
+'') return;;
+*) warn_msg "Неизвестный пункт."; pause;;
+esac
+done
+}
+
+# ==========================================
+# УСТАНОВКА И ПРОВЕРКА ЗАВИСИМОСТЕЙ
+# ==========================================
+ensure_dependencies(){
+missing=""
+[ "$HAS_CURL" = yes ] || missing="$missing curl"
+
+if [ "$PKG_MGR" = "apk" ]; then
+[ "$HAS_DIG" = yes ] || missing="$missing bind-tools"
+else
+[ "$HAS_DIG" = yes ] || missing="$missing bind-dig"
+fi
+[ "$HAS_HDP" = yes ] || missing="$missing https-dns-proxy"
+CA_OK=no
+[ -s /etc/ssl/certs/ca-certificates.crt ] && CA_OK=yes
+if [ "$CA_OK" != yes ]; then
+if command -v apk >/dev/null 2>&1; then
+apk info -e ca-certificates >/dev/null 2>&1 && CA_OK=yes
+apk info -e ca-bundle >/dev/null 2>&1 && CA_OK=yes
+elif command -v opkg >/dev/null 2>&1; then
+opkg status ca-certificates 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+opkg status ca-bundle 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+fi
+fi
+[ "$CA_OK" = yes ] || missing="$missing ca-certificates"
+[ "$HAS_DNSMASQ" = yes ] || missing="$missing dnsmasq"
+printf '%s\n' "$missing"
+}
+# ==========================================
+# МЕНЮ УСТАНОВКИ
+# ==========================================
+menu_install() {
+menu_header "📦 КОМПОНЕНТЫ DNS MANAGER"
+printf "  curl              : %s\n" "$(state_word "$HAS_CURL")"
+printf "  dig               : %s\n" "$(state_word "$HAS_DIG")"
+printf "  https-dns-proxy   : %s\n" "$(state_word "$HAS_HDP")"
+CA_OK=no
+[ -s /etc/ssl/certs/ca-certificates.crt ] && CA_OK=yes
+if [ "$CA_OK" != yes ]; then
+if command -v apk >/dev/null 2>&1; then
+apk info -e ca-certificates >/dev/null 2>&1 && CA_OK=yes
+apk info -e ca-bundle >/dev/null 2>&1 && CA_OK=yes
+elif command -v opkg >/dev/null 2>&1; then
+opkg status ca-certificates 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+opkg status ca-bundle 2>/dev/null | grep -q '^Status:.*installed' && CA_OK=yes
+fi
+fi
+printf "  CA-сертификаты    : %s\n" "$(state_word "$CA_OK")"
+printf "  dnsmasq           : %s\n" "$(state_word "$HAS_DNSMASQ")"
+need="$(ensure_dependencies)"
+if [ -z "$need" ]; then
+ok_msg "Все обязательные компоненты уже установлены."
+pause
+return
+fi
+printf "${C_YELLOW}Необходимо установить:${C_NC}\n"
+for pkg in $need; do
+printf "  ${C_PINK}↻${C_NC} %s\n" "$pkg"
+done
+printf "\n"
+if confirm_action "Установить недостающие компоненты сейчас?"; then
+if [ "$PKG_MGR" = "apk" ]; then
+apk update && apk add $need
+else
+opkg update && opkg install $need
+fi
+run_discovery
+if [ "$HAS_CURL" = yes ] && [ "$HAS_DIG" = yes ] && \
+[ "$HAS_HDP" = yes ] && [ "$HAS_DNSMASQ" = yes ]; then
+ok_msg "Обязательные компоненты установлены."
+else
+warn_msg "После установки остались недостающие компоненты. Проверьте состояние."
+fi
+else
+info_msg "Установка отменена."
+fi
+pause
+}
+# ==========================================
+# МЕНЮ СОСТОЯНИЯ
+# ==========================================
+menu_status() {
+menu_header "📋 СОСТОЯНИЕ И ЖУРНАЛ"
+printf "${C_WHITE}Последние события:${C_NC}\n"
+if [ -s "$LOG_FILE" ]; then tail -15 "$LOG_FILE"; else printf "${C_YELLOW}Журнал пока пуст.${C_NC}\n"; fi
+echo ""
+printf "${C_WHITE}Состояние последнего теста:${C_NC}\n"
+if [ -s "$TEST_RESULTS" ]; then
+total="$(count_dns)"; okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"; failn=$((total-okn))
+printf "  DNS: ${C_GREEN}%s работают${C_NC}, ${C_YELLOW}%s не прошли${C_NC}, всего %s\n" "$okn" "$failn" "$total"
+else
+printf "  ${C_YELLOW}Тест DNS ещё не запускался.${C_NC}\n"
+fi
+echo ""
+printf "${C_WHITE}Последние транзакции:${C_NC}\n"
+if [ -s "$TX_LOG" ]; then
+tail -10 "$TX_LOG" | awk -F'|' '{
+phase=$3; obj=$4; act=$5; res=$6;
+if (phase=="DISCOVER") phase="Диагностика";
+else if (phase=="TEST") phase="Тест";
+else if (phase=="PLAN") phase="План";
+else if (phase=="APPLY") phase="Применение";
+else if (phase=="VERIFY") phase="Проверка";
+if (res=="OK") res="успешно"; else if (res=="FAIL") res="ошибка";
+printf "  %s: %s → %s → %s\n", phase,obj,act,res;
+}'
+else
+printf "  ${C_YELLOW}Транзакций пока нет.${C_NC}\n"
+fi
+pause
+}
 quick_max_bypass() {
 menu_header "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
 printf "${C_WHITE}Сначала роутер будет перечитан, затем весь каталог DNS будет протестирован.${C_NC}\n"
