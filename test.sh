@@ -146,16 +146,15 @@ _title="$1"
 printf "\n${C_TITLE}╔══════════════════════════════════════════════════════════════╗${C_NC}\n"
 printf "${C_TITLE}║${C_NC} ${C_BOLD}${C_WHITE}%-58s${C_NC} ${C_TITLE}║${C_NC}\n" "$_title"
 printf "${C_TITLE}╚══════════════════════════════════════════════════════════════╝${C_NC}\n"
-printf "${C_YELLOW}${C_BOLD}✓ ВКЛ${C_NC}   ${C_RED}${C_BOLD}✗ ВЫКЛ${C_NC}   ${C_YELLOW}${C_BOLD}⚠ ВНИМАНИЕ${C_NC}   ${C_CYAN}${C_BOLD}ℹ ИНФО${C_NC}\n\n"
 }
 menu_section() {
 printf "\n${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$1"
 }
 menu_item() {
-printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$1" "$2"
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$1" "$2"
 }
 menu_item_state() {
-printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_GREEN}${C_BOLD}%-38s${C_NC} %b\n" "$1" "$2" "$3"
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_YELLOW}${C_BOLD}%-38s${C_NC} %b\n" "$1" "$2" "$3"
 }
 menu_note() {
 printf "      ${C_CYAN}%s${C_NC}\n" "$1"
@@ -889,12 +888,12 @@ _cur_ntp="$(uci -q get system.ntp.server 2>/dev/null)"
 printf "${C_YELLOW}${C_BOLD}Текущие NTP серверы:${C_NC}\n"
 if [ -n "$_cur_ntp" ]; then
 for _s in $_cur_ntp; do
-printf "  ${C_CYAN}•${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$_s"
+printf "  ${C_CYAN}•${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$_s"
 done
 else
 printf "  ${C_YELLOW}(не настроены)${C_NC}\n"
 fi
-printf "\n${C_YELLOW}${C_BOLD}Выбранный профиль:${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$NTP_PRESET"
+printf "\n${C_YELLOW}${C_BOLD}Выбранный профиль:${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$NTP_PRESET"
 menu_item "[1]" "Cloudflare (IP, без DNS)"
 menu_item "[2]" "NIST (несколько IP)"
 menu_item "[3]" "ВНИИФТРИ Москва"
@@ -3203,7 +3202,7 @@ printf "  ${C_YELLOW}${C_BOLD}IPv4${C_NC}               %b\n" "$(state_word "$IP
 printf "  ${C_YELLOW}${C_BOLD}IPv6${C_NC}               %b\n" "$(state_word "$IPV6_ROUTE")"
 printf "  ${C_YELLOW}${C_BOLD}dnsmasq${C_NC}            %b\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  ${C_YELLOW}${C_BOLD}https-dns-proxy${C_NC}    %b\n" "$(state_word "$HAS_HDP")"
-printf "  ${C_YELLOW}${C_BOLD}DoH обнаружено${C_NC}     ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$DOH_TOTAL"
+printf "  ${C_YELLOW}${C_BOLD}DoH обнаружено${C_NC}     ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$DOH_TOTAL"
 printf "  ${C_YELLOW}${C_BOLD}Watchdog${C_NC}            %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
 [ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}${C_BOLD}⚠ force_dns${C_NC} ${C_CYAN}стороннего DoH включён${C_NC}\n"
 
@@ -3220,8 +3219,8 @@ menu_item "[6]" "⭐ Выбор по категориям"
 
 menu_section "НАСТРОЙКА"
 menu_item "[7]" "📊 Карта состояния"
-menu_item_state "[8]" "🧪 Тест всех DNS/DoH" "${C_YELLOW}(%s)${C_NC}" "$(count_dns)"
-menu_item_state "[9]" "⚙ Слоты DNS" "${C_YELLOW}(6+2)${C_NC}"
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_YELLOW}${C_BOLD}%-38s${C_NC} ${C_CYAN}${C_BOLD}(%s)${C_NC}\n" "[8]" "🧪 Тест всех DNS/DoH" "$(count_dns)"
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_YELLOW}${C_BOLD}%-38s${C_NC} ${C_CYAN}${C_BOLD}(6+2)${C_NC}\n" "[9]" "⚙ Слоты DNS"
 menu_item "[10]" "🎯 Bootstrap DNS"
 menu_item "[11]" "🕐 Время / NTP"
 menu_item "[12]" "🔧 Дополнительные настройки"
