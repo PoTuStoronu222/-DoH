@@ -4,7 +4,7 @@ MANAGER_PATH="/usr/bin/dns-manager"
 # ==========================================
 # ОСНОВНЫЕ ПАРАМЕТРЫ
 # ==========================================
-VERSION="1.11-HYBRID"
+VERSION="1.12-HYBRID"
 BASE_DIR="/etc/dns-manager"
 CFG_DIR="$BASE_DIR/config"
 STATE_DIR="/var/run/dns-manager"
@@ -38,8 +38,8 @@ C_BOLD='\033[1m'
 C_WHITE='\033[1;37m'
 C_PINK='\033[1;35m'
 C_DGRAY='\033[1;37m'
-C_TITLE='\033[1;34m'
-C_SECTION='\033[1;35m'
+C_TITLE='\033[0;34m'
+C_SECTION='\033[1;33m'
 
 # ==========================================
 # ПРОВЕРКА И ОБНОВЛЕНИЕ
@@ -130,7 +130,7 @@ confirm_action() {
     printf "  ${C_GREEN}[✓] Y / y  или  Н / н — Да, применить${C_NC}\n"
     printf "  ${C_RED}[✗] N / n  или  Т / т — Нет, назад${C_NC}\n"
     printf "  ${C_WHITE}[Enter] — отмена / назад${C_NC}\n"
-    printf "${C_YELLOW}Выбор: ${C_NC}"
+    menu_prompt
     safe_read _ans
     case "$_ans" in
         y|Y|н|Н|yes|YES|да|Да|ДА) return 0 ;;
@@ -147,6 +147,24 @@ printf "\n${C_TITLE}╔═══════════════════
 printf "${C_TITLE}║${C_NC} ${C_BOLD}${C_WHITE}%-58s${C_NC} ${C_TITLE}║${C_NC}\n" "$_title"
 printf "${C_TITLE}╚══════════════════════════════════════════════════════════════╝${C_NC}\n"
 printf "${C_YELLOW}${C_BOLD}✓ ВКЛ${C_NC}   ${C_RED}${C_BOLD}✗ ВЫКЛ${C_NC}   ${C_YELLOW}${C_BOLD}⚠ ВНИМАНИЕ${C_NC}   ${C_CYAN}${C_BOLD}ℹ ИНФО${C_NC}\n\n"
+}
+menu_section() {
+printf "\n${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$1"
+}
+menu_item() {
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$1" "$2"
+}
+menu_item_state() {
+printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_GREEN}${C_BOLD}%-38s${C_NC} %b\n" "$1" "$2" "$3"
+}
+menu_note() {
+printf "      ${C_CYAN}%s${C_NC}\n" "$1"
+}
+menu_back() {
+printf "\n${C_GREEN}${C_BOLD}[Enter]${C_NC} ${C_CYAN}Назад${C_NC}\n\n"
+}
+menu_prompt() {
+printf "${C_YELLOW}${C_BOLD}Выберите пункт: ${C_NC}"
 }
 
 # ==========================================
@@ -793,7 +811,7 @@ PORT_4="$HYBRID_PORT_4"; PORT_5="$HYBRID_PORT_5"; PORT_6="$HYBRID_PORT_6"
 show_hybrid_profile() {
 while :; do
 menu_header "⭐ HYBRID SMARTDNS"
-printf "${C_SECTION}ОБЩИЙ ПУЛ DOH${C_NC}\n"
+menu_section "ОБЩИЙ ПУЛ DOH"
 printf "${C_WHITE}  %-8s %-34s %s${C_NC}\n" "ПОРТ" "DNS" "РОЛЬ"
 printf "  ──────────────────────────────────────────────────────────\n"
 for _s in 1 2 3 4 5 6; do
@@ -808,12 +826,12 @@ fi
 printf "\n${C_SECTION}РЕЖИМ${C_NC}\n"
 printf "  ${C_WHITE}Общий DNS:${C_NC} 6 DoH работают параллельно.\n"
 printf "  ${C_WHITE}RU:${C_NC}       .ru / .su / .рф → отдельный DNS.\n"
-printf "\n${C_SECTION}ДЕЙСТВИЯ${C_NC}\n"
-printf "  ${C_YELLOW}[1]${C_NC} ⚡ Автоматически настроить\n"
-printf "  ${C_YELLOW}[2]${C_NC} 🧪 Проверить DNS\n"
-printf "  ${C_YELLOW}[3]${C_NC} 🔧 Изменить слоты\n"
-printf "  ${C_GREEN}[Enter]${C_NC} Назад\n\n"
-printf "${C_YELLOW}Выбор › ${C_NC}"
+menu_section "ДЕЙСТВИЯ"
+menu_item "[1]" "⚡ Автоматически настроить"
+menu_item "[2]" "🧪 Проверить DNS"
+menu_item "[3]" "🔧 Изменить слоты"
+menu_back
+menu_prompt
 safe_read _c
 case "$_c" in
 1)
@@ -866,23 +884,24 @@ log_tx "APPLY" "NTP" "ADD" "OK" "profile=$NTP_PRESET;servers=$servers"
 # МЕНЮ NTP
 # ==========================================
 menu_ntp() {
-clear_screen
 menu_header "🕐 ВРЕМЯ / NTP"
 _cur_ntp="$(uci -q get system.ntp.server 2>/dev/null)"
-printf "${C_WHITE}Текущие NTP серверы:${C_NC}\n"
+printf "${C_YELLOW}${C_BOLD}Текущие NTP серверы:${C_NC}\n"
 if [ -n "$_cur_ntp" ]; then
 for _s in $_cur_ntp; do
-printf "  ${C_GREEN}•${C_NC} %s\n" "$_s"
+printf "  ${C_CYAN}•${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$_s"
 done
 else
 printf "  ${C_YELLOW}(не настроены)${C_NC}\n"
 fi
-printf "\n${C_WHITE}Выбранный профиль: ${C_YELLOW}%s${C_NC}\n" "$NTP_PRESET"
-printf "  ${C_GREEN}[1]${C_NC} Cloudflare (IP, без DNS)\n"
-printf "  ${C_BLUE}[2]${C_NC} NIST (несколько IP)\n"
-printf "  ${C_YELLOW}[3]${C_NC} ВНИИФТРИ Москва\n"
-printf "  ${C_CYAN}[4]${C_NC} Google (IP, leap-smear)\n"
-printf "  ${C_GREEN}[Enter]${C_NC} Назад\n${C_YELLOW}Выбор:${C_NC} "; safe_read c
+printf "\n${C_YELLOW}${C_BOLD}Выбранный профиль:${C_NC} ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$NTP_PRESET"
+menu_item "[1]" "Cloudflare (IP, без DNS)"
+menu_item "[2]" "NIST (несколько IP)"
+menu_item "[3]" "ВНИИФТРИ Москва"
+menu_item "[4]" "Google (IP, leap-smear)"
+menu_back
+menu_prompt
+safe_read c
 case "$c" in
 1) NTP_PRESET="cf_ip";;
 2) NTP_PRESET="nist_ip";;
@@ -894,6 +913,7 @@ save_config
 apply_ntp_ip_fallback
 pause
 }
+
 # ==========================================
 # ВЛАДЕЛЬЦЫ DNS И ПОРТЫ
 # ==========================================
@@ -2105,11 +2125,8 @@ fi
 # МЕНЮ КАРТЫ DNS
 # ==========================================
 show_map() {
-clear_screen
-printf "${C_WHITE}╔════════════════════════════════════════════════╗\n"
-printf "║             📊 Карта состояния роутера         ║\n"
-printf "╚════════════════════════════════════════════════╝${C_NC}\n"
-printf "${C_SECTION}СИСТЕМА${C_NC}\n"
+menu_header "📊 КАРТА СОСТОЯНИЯ РОУТЕРА"
+menu_section "СИСТЕМА"
 printf "  OpenWrt:        ${C_WHITE}%s${C_NC}\n" "$SYS_OWRT"
 printf "  Платформа:      ${C_WHITE}%s${C_NC}\n" "$SYS_TARGET"
 printf "  Архитектура:    ${C_WHITE}%s${C_NC}\n" "$SYS_ARCH"
@@ -2121,7 +2138,7 @@ printf "  IPv6:           %s\n" "$(state_word "$IPV6_ROUTE")"
 printf "  curl:            %s\n" "$(state_word "$HAS_CURL")"
 printf "  dig:             %s\n" "$(state_word "$HAS_DIG")"
 printf "  ntpd:            %s\n" "$(state_word "$HAS_NTPD")"
-printf "${C_SECTION}DNS${C_NC}\n"
+menu_section "DNS"
 printf "  dnsmasq:         %s\n" "$(state_word "$DNSMASQ_RUN")"
 printf "  DoH всего:       ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
 printf "  Наших:           ${C_WHITE}%s${C_NC}\n" "$DOH_OURS"
@@ -2132,7 +2149,7 @@ printf "  Unbound:         %s\n" "$(state_word "$DNS_UNBOUND")"
 printf "  AdGuard Home:    %s\n" "$(state_word "$DNS_ADGUARD")"
 printf "  MosDNS:          %s\n" "$(state_word "$DNS_MOSDNS")"
 printf "  Sing-box:        %s\n" "$(state_word "$DNS_SINGBOX")"
-printf "${C_SECTION}СТОРОННИЕ РЕШЕНИЯ${C_NC}\n"
+menu_section "СТОРОННИЕ РЕШЕНИЯ"
 printf "  Zapret:          %s\n" "$(state_word "$HAS_ZAPRET")"
 printf "  Zapret2:         %s\n" "$(state_word "$HAS_ZAPRET2")"
 printf "  NetShift:        %s\n" "$(state_word "$HAS_NETSHIFT")"
@@ -2146,12 +2163,12 @@ printf "  TG-Rust:         %s\n" "$(state_word "$HAS_TGRUST")"
 printf "  TG-MTProto:      %s\n" "$(state_word "$HAS_TGMT")"
 printf "  ByeDPI:          %s\n" "$(state_word "$HAS_BYEDPI")"
 printf "  Tailscale:       %s\n" "$(state_word "$HAS_TAILSCALE")"
-printf "${C_SECTION}FIREWALL${C_NC}\n"
+menu_section "FIREWALL"
 printf "  QUIC нашего менеджера:      %s\n" "$(state_word "$QUIC_OURS")"
 printf "  Чужое эквивалентное правило: %s\n" "$(state_word "$QUIC_FOREIGN")"
 printf "  Активный nft:               %s\n" "$(state_word "$NFT_ACTIVE")"
 printf "  Аппаратное ускорение:       %s\n" "$(state_word "$FLOW_OFFLOAD")"
-printf "${C_SECTION}МОДУЛИ DNS MANAGER${C_NC}\n"
+menu_section "МОДУЛИ DNS MANAGER"
 printf "  Профиль:                    ${C_YELLOW}%s${C_NC}\n" "$( [ "$DNS_PROFILE" = hybrid ] && printf '%s' 'Hybrid SmartDNS — 6 DoH + Yandex RU' || printf '%s' 'Пользовательский' )"
 printf "  Балансировка DNS:           %s\n" "$(config_state_word "$BALANCER_ENABLED")"
 printf "  Раздельный DNS (.ru/.su/.рф): %s\n" "$(config_state_word "$TLD_SPLIT")"
@@ -2173,7 +2190,7 @@ pause
 show_doh() {
 menu_header "🔎 НАЙДЕННЫЕ DOH"
 [ -s "$DOH_INV" ] || { printf "${C_YELLOW}https-dns-proxy секции не найдены.${C_NC}\n"; pause; return; }
-printf "${C_SECTION}СЕКЦИИ${C_NC}\n"
+menu_section "СЕКЦИИ"
 printf "  ${C_WHITE}%-4s %-8s %-12s %-8s %-12s${C_NC}\n" "#" "ПОРТ" "ВЛАДЕЛЕЦ" "СОСТ." "АДРЕС"
 printf "  ──────────────────────────────────────────────────────────\n"
 while IFS='|' read -r idx port owner addr running url; do
@@ -2187,7 +2204,7 @@ menu_header "🧪 РЕЗУЛЬТАТЫ DNS-ТЕСТА"
 [ -s "$TEST_RESULTS" ] || { printf "${C_YELLOW}Тест ещё не запускался.${C_NC}\n"; pause; return; }
 okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"; total="$(count_dns)"; failn=$((total-okn))
 printf "${C_GREEN}✓ Работают: %s${C_NC}    ${C_RED}✗ Ошибки: %s${C_NC}    ${C_WHITE}Всего: %s${C_NC}\n\n" "$okn" "$failn" "$total"
-printf "${C_SECTION}%-28s %-18s %-9s %s${C_NC}\n" "DNS" "КАТЕГОРИЯ" "ВРЕМЯ" "СТАТУС"
+printf "${C_YELLOW}${C_BOLD}%-28s %-18s %-9s %s${C_NC}\n" "DNS" "КАТЕГОРИЯ" "ВРЕМЯ" "СТАТУС"
 printf "  ──────────────────────────────────────────────────────────\n"
 { grep '|OK$' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n; grep -v '|OK$' "$TEST_RESULTS" 2>/dev/null; } | while IFS='|' read -r id cat name ms st; do
 status_text="$(status_ru "$st")"
@@ -2205,19 +2222,19 @@ pause
 show_best() {
 while :; do
 menu_header "⭐ ВЫБОР DNS"
-printf "${C_SECTION}ГОТОВЫЕ ПРОФИЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[1]${C_NC} ⭐ Hybrid SmartDNS       6 DoH + Yandex RU\n"
-printf "  ${C_YELLOW}[2]${C_NC} ⚡ Чистый быстрый DNS\n"
-printf "  ${C_YELLOW}[3]${C_NC} 🛡 Максимальная безопасность\n"
-printf "  ${C_YELLOW}[4]${C_NC} 🔐 Максимальная приватность\n"
-printf "  ${C_YELLOW}[5]${C_NC} 🧹 Блокировка рекламы\n"
-printf "\n${C_SECTION}КАТЕГОРИИ${C_NC}\n"
-printf "  ${C_YELLOW}[6]${C_NC} Обход блокировок\n"
-printf "  ${C_YELLOW}[7]${C_NC} Семейный DNS\n"
-printf "  ${C_YELLOW}[8]${C_NC} Социальные сети / сервисы\n"
-printf "  ${C_YELLOW}[9]${C_NC} Все категории\n"
-printf "\n${C_GREEN}[Enter]${C_NC} Назад\n\n"
-printf "${C_YELLOW}Выбор › ${C_NC}"
+menu_section "ГОТОВЫЕ ПРОФИЛИ"
+menu_item "[1]" "⭐ Hybrid SmartDNS — 6 DoH + Yandex RU"
+menu_item "[2]" "⚡ Чистый быстрый DNS"
+menu_item "[3]" "🛡 Максимальная безопасность"
+menu_item "[4]" "🔐 Максимальная приватность"
+menu_item "[5]" "🧹 Блокировка рекламы"
+menu_section "КАТЕГОРИИ"
+menu_item "[6]" "Обход блокировок"
+menu_item "[7]" "Семейный DNS"
+menu_item "[8]" "Социальные сети / сервисы"
+menu_item "[9]" "Все категории"
+menu_back
+menu_prompt
 safe_read goal
 [ -z "$goal" ] && return
 case "$goal" in
@@ -2381,14 +2398,13 @@ return 0
 menu_best_actions() {
 goal="$1"; title="$2"
 while :; do
-clear_screen
-printf "${C_WHITE}╔══════════════════════════════════════════════╗\n"
-printf "║  ⭐ Настройка: %-31s ║\n" "$title"
-printf "╚══════════════════════════════════════════════╝${C_NC}\n"
-printf "${C_YELLOW}[1]${C_NC} ⚡ Автонастройка: подобрать и применить безопасно\n"
-printf "${C_YELLOW}[2]${C_NC} ⭐ Показать лучшие варианты\n"
-printf "${C_YELLOW}[3]${C_NC} ⚙ Выбрать DNS вручную\n"
-printf "${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "
+menu_header "⭐ $title"
+menu_section "ДЕЙСТВИЯ"
+menu_item "[1]" "⚡ Автонастройка: подобрать и применить безопасно"
+menu_item "[2]" "⭐ Показать лучшие варианты"
+menu_item "[3]" "⚙ Выбрать DNS вручную"
+menu_back
+menu_prompt
 safe_read a
 case "$a" in
 1)
@@ -2400,9 +2416,10 @@ fi
 ;;
 2)
 clear_screen
-printf "${C_YELLOW}ТОП-5 по времени ответа — %s${C_NC}\n" "$title"
+menu_header "⭐ ЛУЧШИЕ ВАРИАНТЫ — $title"
+menu_section "ТОП-5 ПО ВРЕМЕНИ ОТВЕТА"
 show_best_category "$goal" 5 | while IFS='|' read -r _id _cat _name _ms _st; do
-printf "  ${C_WHITE}%-34s${C_NC} %s мс\n" "$_name" "$_ms"
+printf "  ${C_CYAN}${C_BOLD}•${C_NC} ${C_GREEN}${C_BOLD}%-34s${C_NC} ${C_YELLOW}%s мс${C_NC}\n" "$_name" "$_ms"
 done
 pause
 ;;
@@ -2412,19 +2429,24 @@ pause
 esac
 done
 }
+
 # ==========================================
 # ВЫБОР DNS-СЕРВЕРА ДЛЯ СЛОТА
 # ==========================================
 select_slot() {
 slot="$1"; clear_screen
-printf "${C_TITLE}=== Выбор DNS для слота %s ===${C_NC}\n" "$slot"
+menu_header "⚙ ВЫБОР DNS ДЛЯ СЛОТА $slot"
 n=1
 while IFS='|' read -r id cat prof name url region status; do
 case "$id" in ''|\#*) continue;; esac
-printf "${C_YELLOW}[%3d]${C_NC} %-24s ${C_WHITE}[%s]${C_NC}\n" "$n" "$name" "$cat"
+printf "  ${C_CYAN}${C_BOLD}[%3d]${C_NC} ${C_GREEN}${C_BOLD}%-24s${C_NC} ${C_CYAN}[%s]${C_NC}\n" "$n" "$name" "$cat"
 n=$((n+1))
 done < "$DNS_CATALOG"
-printf "\n${C_YELLOW}[99]${C_NC} Очистить   ${C_GREEN}[Enter]${C_NC} Назад\nВыбор: "; safe_read c
+printf "\n"
+menu_item "[99]" "Очистить"
+menu_back
+menu_prompt
+safe_read c
 [ -z "$c" ] && return
 if [ "$c" = "99" ]; then
 eval "SLOT_$slot=''"
@@ -2448,27 +2470,28 @@ menu_slots() {
 while :; do
 menu_header "⚙ DNS-ПРОФИЛЬ"
 if [ "$DNS_PROFILE" = "hybrid" ]; then
-printf "${C_WHITE}Профиль:${C_NC} ${C_YELLOW}Hybrid SmartDNS${C_NC}\n"
+printf "${C_YELLOW}${C_BOLD}Профиль:${C_NC} ${C_GREEN}${C_BOLD}Hybrid SmartDNS${C_NC}\n"
 else
-printf "${C_WHITE}Профиль:${C_NC} пользовательский\n"
+printf "${C_YELLOW}${C_BOLD}Профиль:${C_NC} ${C_GREEN}${C_BOLD}пользовательский${C_NC}\n"
 fi
-printf "\n${C_SECTION}ОБЩИЕ СЛОТЫ${C_NC}\n"
-printf "  ${C_WHITE}%-4s %-34s %-8s${C_NC}\n" "№" "DNS" "ПОРТ"
+menu_section "ОБЩИЕ СЛОТЫ"
+printf "  ${C_YELLOW}${C_BOLD}%-4s %-34s %-8s${C_NC}\n" "№" "DNS" "ПОРТ"
 printf "  ──────────────────────────────────────────────────────────\n"
 for s in 1 2 3 4 5 6; do
 eval "v=\${SLOT_$s}"
 eval "p=\${PORT_$s}"
 [ "$DNS_PROFILE" = "hybrid" ] && p="$(hybrid_desired_port "$s")"
-printf "  ${C_YELLOW}%-4s${C_NC} %-34s %-8s\n" "$s" "$(dns_name "$v")" "${p:-авто}"
+printf "  ${C_CYAN}${C_BOLD}%-4s${C_NC} ${C_GREEN}${C_BOLD}%-34s${C_NC} ${C_YELLOW}${C_BOLD}%-8s${C_NC}\n" "$s" "$(dns_name "$v")" "${p:-авто}"
 done
-printf "\n${C_SECTION}РЕГИОНАЛЬНЫЕ СЛОТЫ${C_NC}\n"
-printf "  ${C_YELLOW}[7]${C_NC} RU   %-30s %s\n" "$(dns_name "$SLOT_RU")" "${PORT_RU:-$HYBRID_PORT_RU}"
-printf "  ${C_YELLOW}[8]${C_NC} RU2  %-30s %s\n" "$(dns_name "$SLOT_RU_2")" "${PORT_RU_2:-авто}"
-printf "\n${C_SECTION}ДЕЙСТВИЯ${C_NC}\n"
-printf "  ${C_YELLOW}[9]${C_NC} ⚡ Автоподбор лучших\n"
-printf "  ${C_YELLOW}[10]${C_NC} ⭐ Восстановить стандартный Hybrid\n"
-printf "${C_GREEN}[Enter]${C_NC} Назад\n\n"
-printf "${C_YELLOW}Выбор › ${C_NC}"; safe_read c
+menu_section "РЕГИОНАЛЬНЫЕ СЛОТЫ"
+printf "  ${C_CYAN}${C_BOLD}[7]${C_NC} ${C_GREEN}${C_BOLD}RU${C_NC}   ${C_GREEN}%-30s${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$(dns_name "$SLOT_RU")" "${PORT_RU:-$HYBRID_PORT_RU}"
+printf "  ${C_CYAN}${C_BOLD}[8]${C_NC} ${C_GREEN}${C_BOLD}RU2${C_NC}  ${C_GREEN}%-30s${C_NC} ${C_YELLOW}${C_BOLD}%s${C_NC}\n" "$(dns_name "$SLOT_RU_2")" "${PORT_RU_2:-авто}"
+menu_section "ДЕЙСТВИЯ"
+menu_item "[9]" "⚡ Автоподбор лучших"
+menu_item "[10]" "⭐ Восстановить стандартный Hybrid"
+menu_back
+menu_prompt
+safe_read c
 [ -z "$c" ] && return
 case "$c" in
 1|2|3|4|5|6) select_slot "$c";;
@@ -2480,25 +2503,29 @@ case "$c" in
 esac
 done
 }
+
 menu_bootstrap() {
 menu_header "🎯 BOOTSTRAP DNS"
-printf "${C_WHITE}Текущие серверы:${C_NC}\n  %s\n\n" "$BOOTSTRAP_DNS"
-printf "${C_SECTION}ГОТОВЫЕ ПРОФИЛИ${C_NC}\n"
-printf "  ${C_YELLOW}[1]${C_NC} Независимые: Yandex + AdGuard + Cloudflare + Google + Quad9\n"
-printf "  ${C_YELLOW}[2]${C_NC} Cloudflare + Yandex\n"
-printf "  ${C_YELLOW}[3]${C_NC} Только Cloudflare\n"
-printf "  ${C_YELLOW}[4]${C_NC} Ввести свои IPv4\n"
-printf "\n${C_GREEN}[Enter]${C_NC} Назад\n\n${C_YELLOW}Выбор › ${C_NC}"; safe_read c
+printf "${C_YELLOW}${C_BOLD}Текущие серверы:${C_NC}\n  ${C_GREEN}%s${C_NC}\n" "$BOOTSTRAP_DNS"
+menu_section "ГОТОВЫЕ ПРОФИЛИ"
+menu_item "[1]" "Независимые: Yandex + AdGuard + Cloudflare + Google + Quad9"
+menu_item "[2]" "Cloudflare + Yandex"
+menu_item "[3]" "Только Cloudflare"
+menu_item "[4]" "Ввести свои IPv4"
+menu_back
+menu_prompt
+safe_read c
 case "$c" in
 1) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1,94.140.14.14,94.140.15.15,8.8.8.8,8.8.4.4,9.9.9.9,149.112.112.112";;
 2) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1";;
 3) BOOTSTRAP_DNS="1.1.1.1,1.0.0.1";;
-4) printf "IPv4 › "; safe_read BOOTSTRAP_DNS;;
+4) printf "${C_YELLOW}${C_BOLD}IPv4 › ${C_NC}"; safe_read BOOTSTRAP_DNS;;
 *) return;;
 esac
 save_config
 if confirm_action "Применить выбранный Bootstrap сейчас?"; then apply_bootstrap_only; pause; fi
 }
+
 menu_bogus() {
 apply_bogus
 }
@@ -2661,60 +2688,67 @@ module_state_word() {
 # ==========================================
 menu_extras() {
 while :; do
-    clear_screen
-    menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
+menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
 
-    printf "${C_SECTION}${C_BOLD}СЕТЬ И ОБХОД${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[1]${C_NC} ${C_GREEN}${C_BOLD}Блокировка QUIC${C_NC}                 %b\n" "$(module_state_word quic "$BLOCK_QUIC")"
-    printf "  ${C_CYAN}${C_BOLD}[2]${C_NC} ${C_GREEN}${C_BOLD}Исправление MTU / MSS${C_NC}           %b\n" "$(module_state_word mtu "$MTU_FIX")"
-    printf "  ${C_CYAN}${C_BOLD}[3]${C_NC} ${C_GREEN}${C_BOLD}Перехват DNS через DoH${C_NC}          %b\n" "$(module_state_word force "$FORCE_DOH")"
+menu_section "🛡 СЕТЬ И ОБХОД"
+menu_item_state "[1]" "Блокировка QUIC" "$(module_state_word quic "$BLOCK_QUIC")"
+menu_note "Запрещает QUIC по UDP/80 и UDP/443."
+menu_item_state "[2]" "Исправление MTU / MSS" "$(module_state_word mtu "$MTU_FIX")"
+menu_note "Подбирает сетевые параметры для снижения фрагментации."
+menu_item_state "[3]" "Принудительный DNS через DoH" "$(module_state_word force "$FORCE_DOH")"
+menu_note "Перехватывает обычный DNS и направляет его в настроенный DoH."
 
-    printf "${C_SECTION}${C_BOLD}ПРОИЗВОДИТЕЛЬНОСТЬ${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[4]${C_NC} ${C_GREEN}${C_BOLD}Оптимизация TCP и Conntrack${C_NC}      %b\n" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-    printf "      ${C_CYAN}${C_BOLD}↳ Меньше задержек при создании и обработке соединений${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[5]${C_NC} ${C_GREEN}${C_BOLD}Кэширование DNS-запросов (dnsmasq)${C_NC} %b\n" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-    printf "      ${C_CYAN}${C_BOLD}↳ Больше кэш — меньше повторных обращений к внешнему DNS${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[6]${C_NC} ${C_GREEN}${C_BOLD}Оптимизация Go / Tailscale / TG WS${C_NC} %b\n" "$(module_state_word go "$GO_OPTIMIZE")"
-    printf "      ${C_CYAN}${C_BOLD}↳ Ограничения памяти и служебные параметры для Go-сервисов${C_NC}\n"
+menu_section "⚡ ПРОИЗВОДИТЕЛЬНОСТЬ"
+menu_item_state "[4]" "Оптимизация TCP и Conntrack" "$(module_state_word sysctl "$SYSCTL_TUNING")"
+menu_note "Настраивает sysctl и таблицу соединений для меньших задержек."
+menu_item_state "[5]" "Кэширование DNS-запросов" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
+menu_note "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
+menu_item_state "[6]" "Оптимизация Go-сервисов" "$(module_state_word go "$GO_OPTIMIZE")"
+menu_note "Настраивает память и служебные параметры Go / Tailscale / TG WS."
 
-    printf "${C_SECTION}${C_BOLD}СЕРВИСЫ И КЛИЕНТЫ${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[7]${C_NC} ${C_GREEN}${C_BOLD}NTP для клиентов LAN${C_NC}            %b\n" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-    printf "  ${C_CYAN}${C_BOLD}[8]${C_NC} ${C_GREEN}${C_BOLD}Tailscale при поднятии WAN${C_NC}      %b\n" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-    printf "  ${C_CYAN}${C_BOLD}[9]${C_NC} ${C_GREEN}${C_BOLD}Исправления телеметрии и связи${C_NC} %b\n" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+menu_section "📡 СЕРВИСЫ И КЛИЕНТЫ"
+menu_item_state "[7]" "NTP для клиентов LAN" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
+menu_note "Выдаёт клиентам роутера корректное время через NTP."
+menu_item_state "[8]" "Tailscale при поднятии WAN" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
+menu_note "Перезапускает Tailscale после восстановления WAN."
+menu_item_state "[9]" "Исправления телеметрии и связи" "$(module_state_word client_fixes "$CLIENT_FIXES")"
+menu_note "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
 
-    printf "${C_SECTION}${C_BOLD}ОБСЛУЖИВАНИЕ${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[10]${C_NC} ${C_GREEN}${C_BOLD}Очистка старых cron-заданий${C_NC}\n"
-    printf "       ${C_CYAN}${C_BOLD}↳ Разовая очистка старых заданий DNS Manager${C_NC}\n"
-    printf "  ${C_CYAN}${C_BOLD}[11]${C_NC} ${C_GREEN}${C_BOLD}Автопроверка DoH (Watchdog)${C_NC}    %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-    printf "  ${C_CYAN}${C_BOLD}[12]${C_NC} ${C_GREEN}${C_BOLD}IP-заглушки провайдера${C_NC}           ${C_CYAN}${C_BOLD}(bogus-nxdomain)${C_NC}\n"
+menu_section "🧹 ОБСЛУЖИВАНИЕ"
+menu_item "[10]" "Очистка старых cron-заданий"
+menu_note "Разовая очистка старых заданий DNS Manager."
+menu_item_state "[11]" "Автопроверка DoH (Watchdog)" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
+menu_note "Проверяет рабочие DoH и заменяет недоступные слоты."
+menu_item "[12]" "IP-заглушки провайдера"
+menu_note "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
 
-    printf "\n${C_GREEN}${C_BOLD}[Enter]${C_NC} ${C_YELLOW}${C_BOLD}Назад${C_NC}\n\n"
-    printf "${C_YELLOW}${C_BOLD}Выберите пункт: ${C_NC}"
-    safe_read c
-    case "$c" in
-        1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
-        2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
-        3) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
-        4)
-            if [ "$SYSCTL_TUNING" = 1 ]; then
-                SYSCTL_TUNING=0; SYSCTL_EXTENDED=0
-            else
-                SYSCTL_TUNING=1; SYSCTL_EXTENDED=1
-            fi
-            apply_extras_now sysctl
-            apply_extras_now sysctl_ext
-            pause;;
-        5) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
-        6) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
-        7) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
-        8) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
-        9) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
-        10) cleanup_manager_cron; CRON_CLEANUP=1; save_config; pause;;
-        11) [ "$WATCHDOG_ENABLED" = 1 ] && WATCHDOG_ENABLED=0 || WATCHDOG_ENABLED=1; apply_watchdog; pause;;
-        12) menu_bogus;;
-        '') return;;
-        *) warn_msg "Неизвестный пункт."; pause;;
-    esac
+menu_back
+menu_prompt
+safe_read c
+case "$c" in
+1) [ "$BLOCK_QUIC" = 1 ] && BLOCK_QUIC=0 || BLOCK_QUIC=1; apply_extras_now quic; pause;;
+2) [ "$MTU_FIX" = 1 ] && MTU_FIX=0 || MTU_FIX=1; apply_extras_now mtu; pause;;
+3) [ "$FORCE_DOH" = 1 ] && FORCE_DOH=0 || FORCE_DOH=1; apply_extras_now force; pause;;
+4)
+if [ "$SYSCTL_TUNING" = 1 ]; then
+SYSCTL_TUNING=0; SYSCTL_EXTENDED=0
+else
+SYSCTL_TUNING=1; SYSCTL_EXTENDED=1
+fi
+apply_extras_now sysctl
+apply_extras_now sysctl_ext
+pause;;
+5) [ "$DNSMASQ_PERF" = 1 ] && DNSMASQ_PERF=0 || DNSMASQ_PERF=1; apply_extras_now dnsmasq_perf; pause;;
+6) [ "$GO_OPTIMIZE" = 1 ] && GO_OPTIMIZE=0 || GO_OPTIMIZE=1; apply_extras_now go; pause;;
+7) [ "$NTP_CLIENTS" = 1 ] && NTP_CLIENTS=0 || NTP_CLIENTS=1; apply_extras_now ntp_clients; pause;;
+8) [ "$TAILSCALE_HOTPLUG" = 1 ] && TAILSCALE_HOTPLUG=0 || TAILSCALE_HOTPLUG=1; apply_extras_now ts_hotplug; pause;;
+9) [ "$CLIENT_FIXES" = 1 ] && CLIENT_FIXES=0 || CLIENT_FIXES=1; apply_extras_now client_fixes; pause;;
+10) cleanup_manager_cron; CRON_CLEANUP=1; save_config; pause;;
+11) [ "$WATCHDOG_ENABLED" = 1 ] && WATCHDOG_ENABLED=0 || WATCHDOG_ENABLED=1; apply_watchdog; pause;;
+12) menu_bogus;;
+'') return;;
+*) warn_msg "Неизвестный пункт."; pause;;
+esac
 done
 }
 
@@ -2750,10 +2784,7 @@ printf '%s\n' "$missing"
 # МЕНЮ УСТАНОВКИ
 # ==========================================
 menu_install() {
-clear_screen
-printf "${C_WHITE}╔════════════════════════════════════════════════════╗\n"
-printf "║              📦 Компоненты DNS Manager            ║\n"
-printf "╚════════════════════════════════════════════════════╝${C_NC}\n"
+menu_header "📦 КОМПОНЕНТЫ DNS MANAGER"
 printf "  curl              : %s\n" "$(state_word "$HAS_CURL")"
 printf "  dig               : %s\n" "$(state_word "$HAS_DIG")"
 printf "  https-dns-proxy   : %s\n" "$(state_word "$HAS_HDP")"
@@ -2803,10 +2834,7 @@ pause
 # МЕНЮ СОСТОЯНИЯ
 # ==========================================
 menu_status() {
-clear_screen
-printf "${C_WHITE}╔══════════════════════════════════════════════╗\n"
-printf "║             📋 Состояние и журнал            ║\n"
-printf "╚══════════════════════════════════════════════╝${C_NC}\n"
+menu_header "📋 СОСТОЯНИЕ И ЖУРНАЛ"
 printf "${C_WHITE}Последние события:${C_NC}\n"
 if [ -s "$LOG_FILE" ]; then tail -15 "$LOG_FILE"; else printf "${C_YELLOW}Журнал пока пуст.${C_NC}\n"; fi
 echo ""
@@ -2839,20 +2867,18 @@ pause
 # БЫСТРЫЙ РЕЖИМ — МАКСИМАЛЬНАЯ СКОРОСТЬ
 # ==========================================
 quick_max_bypass() {
-clear_screen
-printf "${C_TITLE}╔════════════════════════════════════════════════════╗\n"
-printf "║        🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД            ║\n"
-printf "╚════════════════════════════════════════════════════╝${C_NC}\n"
+menu_header "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
 printf "${C_WHITE}Сначала роутер будет перечитан, затем весь каталог DNS будет протестирован.${C_NC}\n"
 printf "${C_WHITE}После теста будут выбраны только реально доступные кандидаты.${C_NC}\n"
 printf "${C_YELLOW}⏳ Идёт параллельный перебор всех DoH-эндпоинтов — это не самый быстрый шаг.${C_NC}\n"
-printf "${C_GREEN}✓${C_NC} 6 разных рабочих DoH для общего пула\n"
-printf "${C_GREEN}✓${C_NC} Yandex RU для .ru / .su / .рф\n"
-printf "${C_GREEN}✓${C_NC} dnsmasq :53\n"
-printf "${C_GREEN}✓${C_NC} allservers=1\n"
-printf "${C_GREEN}✓${C_NC} уникальные порты\n"
-printf "${C_GREEN}✓${C_NC} чужие DoH/Firewall не присваиваются менеджеру\n"
-printf "${C_GREEN}✓${C_NC} проверка после применения + автоматический откат\n"
+menu_section "ЧТО БУДЕТ НАСТРОЕНО"
+menu_note "✓ 6 разных рабочих DoH для общего пула"
+menu_note "✓ Yandex RU для .ru / .su / .рф"
+menu_note "✓ dnsmasq :53"
+menu_note "✓ allservers=1"
+menu_note "✓ уникальные порты"
+menu_note "✓ чужие DoH/Firewall не присваиваются менеджеру"
+menu_note "✓ проверка после применения + автоматический откат"
 printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN при блокировках по IP, SNI, DPI и HTTP.\n"
 test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
@@ -3172,39 +3198,40 @@ while :; do
 run_discovery
 menu_header "🚀 DNS MANAGER $VERSION"
 
-printf "${C_SECTION}СОСТОЯНИЕ РОУТЕРА${C_NC}\n"
-printf "  IPv4               %b\n" "$(state_word "$IPV4_ROUTE")"
-printf "  IPv6               %b\n" "$(state_word "$IPV6_ROUTE")"
-printf "  dnsmasq            %b\n" "$(state_word "$DNSMASQ_RUN")"
-printf "  https-dns-proxy    %b\n" "$(state_word "$HAS_HDP")"
-printf "  DoH обнаружено      ${C_WHITE}%s${C_NC}\n" "$DOH_TOTAL"
-printf "  Watchdog            %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-[ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}⚠ force_dns стороннего DoH включён${C_NC}\n"
+menu_section "СОСТОЯНИЕ РОУТЕРА"
+printf "  ${C_YELLOW}${C_BOLD}IPv4${C_NC}               %b\n" "$(state_word "$IPV4_ROUTE")"
+printf "  ${C_YELLOW}${C_BOLD}IPv6${C_NC}               %b\n" "$(state_word "$IPV6_ROUTE")"
+printf "  ${C_YELLOW}${C_BOLD}dnsmasq${C_NC}            %b\n" "$(state_word "$DNSMASQ_RUN")"
+printf "  ${C_YELLOW}${C_BOLD}https-dns-proxy${C_NC}    %b\n" "$(state_word "$HAS_HDP")"
+printf "  ${C_YELLOW}${C_BOLD}DoH обнаружено${C_NC}     ${C_GREEN}${C_BOLD}%s${C_NC}\n" "$DOH_TOTAL"
+printf "  ${C_YELLOW}${C_BOLD}Watchdog${C_NC}            %b\n" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
+[ "$FORCE_DNS" = 1 ] && printf "  ${C_YELLOW}${C_BOLD}⚠ force_dns${C_NC} ${C_CYAN}стороннего DoH включён${C_NC}\n"
 
-printf "\n${C_SECTION}БЫСТРЫЙ ЗАПУСК${C_NC}\n"
-printf "  ${C_PINK}[1]${C_NC} 🚀 ${C_BOLD}${C_WHITE}МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД${C_NC}\n"
-printf "      ${C_CYAN}6 DoH + Yandex RU + резерв + Watchdog${C_NC}\n"
+menu_section "БЫСТРЫЙ ЗАПУСК"
+menu_item "[1]" "🚀 МАКСИМАЛЬНЫЙ ГИБРИДНЫЙ ОБХОД"
+menu_note "6 DoH + Yandex RU + резерв + Watchdog"
 
-printf "\n${C_SECTION}DNS ПРОФИЛИ${C_NC}\n"
-printf "  ${C_GREEN}[2]${C_NC} ⚡ Максимальная скорость\n"
-printf "  ${C_BLUE}[3]${C_NC} 🛡 Максимальная безопасность\n"
-printf "  ${C_MAGENTA}[4]${C_NC} 🔐 Максимальная приватность\n"
-printf "  ${C_YELLOW}[5]${C_NC} 🧹 Блокировка рекламы\n"
-printf "  ${C_PINK}[6]${C_NC} ⭐ Выбор по категориям\n"
+menu_section "DNS ПРОФИЛИ"
+menu_item "[2]" "⚡ Максимальная скорость"
+menu_item "[3]" "🛡 Максимальная безопасность"
+menu_item "[4]" "🔐 Максимальная приватность"
+menu_item "[5]" "🧹 Блокировка рекламы"
+menu_item "[6]" "⭐ Выбор по категориям"
 
-printf "\n${C_SECTION}НАСТРОЙКА${C_NC}\n"
-printf "  ${C_CYAN}[7]${C_NC}  📊 Карта состояния\n"
-printf "  ${C_CYAN}[8]${C_NC}  🧪 Тест всех DNS/DoH  ${C_WHITE}(%s)${C_NC}\n" "$(count_dns)"
-printf "  ${C_CYAN}[9]${C_NC}  ⚙ Слоты DNS  ${C_WHITE}(6+2)${C_NC}\n"
-printf "  ${C_CYAN}[10]${C_NC} 🎯 Bootstrap DNS\n"
-printf "  ${C_CYAN}[11]${C_NC} 🕐 Время / NTP\n"
-printf "  ${C_CYAN}[12]${C_NC} 🔧 Дополнительные настройки\n"
-printf "  ${C_CYAN}[13]${C_NC} 📋 Состояние и журнал\n"
-printf "  ${C_GREEN}[14]${C_NC} ✓ Показать и применить выбранное\n"
-printf "  ${C_BLUE}[15]${C_NC} 📦 Установить недостающее\n"
-printf "  ${C_RED}[16]${C_NC} ↻ Удалить только изменения DNS Manager\n"
-printf "\n${C_GREEN}[Enter]${C_NC} 🚪 Выход\n\n"
-printf "${C_YELLOW}Выбор › ${C_NC}"
+menu_section "НАСТРОЙКА"
+menu_item "[7]" "📊 Карта состояния"
+menu_item_state "[8]" "🧪 Тест всех DNS/DoH" "${C_YELLOW}(%s)${C_NC}" "$(count_dns)"
+menu_item_state "[9]" "⚙ Слоты DNS" "${C_YELLOW}(6+2)${C_NC}"
+menu_item "[10]" "🎯 Bootstrap DNS"
+menu_item "[11]" "🕐 Время / NTP"
+menu_item "[12]" "🔧 Дополнительные настройки"
+menu_item "[13]" "📋 Состояние и журнал"
+menu_item "[14]" "⚡ Показать и применить выбранное"
+menu_item "[15]" "📦 Установить недостающее"
+menu_item "[16]" "🗑 Удалить только изменения DNS Manager"
+
+menu_back
+menu_prompt
 safe_read c
 [ -z "$c" ] && { clear_screen; printf "${C_GREEN}DNS Manager завершён.${C_NC}\n"; exit 0; }
 case "$c" in
