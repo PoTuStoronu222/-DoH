@@ -1130,56 +1130,6 @@ record_own "doh" "$target" "$url" "slot=$slot;name=$name"
 eval "PORT_$slot=\"$target\""
 printf "  ${C_GREEN}+ %s → 127.0.0.1:%s${C_NC}\n" "$name" "$target"
 }
-repair_duplicate_own_doh_ports() {
-[ -s "$DOH_INV" ] || return 0
-dup_ports="$TMP_DIR/dup-own-ports"
-awk -F'|' '$3=="OURS" && $2!=""{cnt[$2]++} END{for(p in cnt) if(cnt[p]>1) print p}' "$DOH_INV" > "$dup_ports"
-[ -s "$dup_ports" ] || return 0
-while IFS= read -r p; do
-first=1
-while IFS='|' read -r idx url; do
-if [ "$first" -eq 1 ]; then
-first=0
-claim_port_tx "$p" || return 1
-continue
-fi
-oldp="$p"
-free_port || return 1
-newp="$FREE_PORT_RESULT"
-uci set "https-dns-proxy.@https-dns-proxy[$idx].listen_port=$newp" || return 1
-record_own "doh" "$newp" "$url" "repair_duplicate_port=$oldp;section=$idx"
-log_tx "PLAN" "doh.duplicate.$idx" "MOVE" "OK" "from=$oldp;to=$newp;url=$url"
-printf "  ${C_YELLOW}↻ Исправлен дубликат порта %s для %s → %s (${C_GREEN}успешно${C_NC})\n" "$oldp" "$(dns_name "$url")" "$newp"
-done <<EOF_DUP
-$(awk -F'|' -v p="$p" '$3=="OURS" && $2==p{print $1"|"$6}' "$DOH_INV")
-EOF_DUP
-done < "$dup_ports"
-}
-reconcile_selected_own_doh() {
-    _keep="$TMP_DIR/keep-own-doh"
-    : > "$_keep"
-    for s in 1 2 3 4 5 6 RU; do
-        eval "_id=\${SLOT_$s}"
-        [ -n "$_id" ] || continue
-        _u="$(normalize_url "$(dns_url "$_id")")"
-        [ -n "$_u" ] && printf '%s\n' "$_u" >> "$_keep"
-    done
-    sort -u "$_keep" -o "$_keep" 2>/dev/null || true
-    i=0
-    while uci -q get "https-dns-proxy.@https-dns-proxy[$i]" >/dev/null 2>&1; do
-        _m="$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].dns_manager" 2>/dev/null)"
-        if [ "$_m" = 1 ]; then
-            _u="$(normalize_url "$(uci -q get "https-dns-proxy.@https-dns-proxy[$i].resolver_url" 2>/dev/null)")"
-            if [ -z "$_u" ] || ! grep -qxF "$_u" "$_keep" 2>/dev/null; then
-                printf "${C_PINK}↻ Удаляется устаревшая собственная DoH-секция: %s${C_NC}\n" "${_u:-без URL}"
-                uci -q delete "https-dns-proxy.@https-dns-proxy[$i]" || return 1
-                continue
-            fi
-        fi
-        i=$((i+1))
-    done
-    return 0
-}
 validate_selected_slots() {
     _urls="$TMP_DIR/selected-urls"
     _ports="$TMP_DIR/selected-ports"
@@ -1436,7 +1386,10 @@ apply_client_fixes() {
 
 remove_client_fixes() {
     f="/etc/dnsmasq.d/91-dns-manager-client-fixes.conf"
-    if grep -q '^# DNS_MANAGER_MANAGED=1$' "$f" 2>/dev/null; then rm -f "$f"; /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true; fi
+    if grep -q '^# DNS_MANAGER_MANAGED=1$' "$f" 2>/dev/null; then
+        rm -f "$f" || return 1
+    fi
+    return 0
 }
 apply_sysctl_extended() {
     [ "${SYSCTL_EXTENDED:-0}" = 1 ] || return 0
@@ -1780,45 +1733,6 @@ log_tx "TX" "transaction" "COMMIT" "OK" "dir=$TX_DIR"
 # ==========================================
 # HYBRID — СОГЛАСОВАНИЕ ПОРТОВ
 # ==========================================
-hybrid_reconcile_existing() {
-[ "$DNS_PROFILE" = hybrid ] || return 0
-for id in mafioznik comss_bypass astracat malw_link comss_ru vppay yandex_ru; do
-local url="$(normalize_url "$(dns_url "$id")")"
-[ -n "$url" ] || continue
-local first_found=""
-for sec in $(uci show https-dns-proxy 2>/dev/null | awk -F'[.=]' '/\..*=https-dns-proxy$/ {print $2}'); do
-local m="$(uci -q get "https-dns-proxy.$sec.dns_manager" 2>/dev/null)"
-local u="$(normalize_url "$(uci -q get "https-dns-proxy.$sec.resolver_url" 2>/dev/null)")"
-if [ "$m" = "1" ] && [ "$u" = "$url" ]; then
-if [ -z "$first_found" ]; then
-first_found="$sec"
-else
-uci -q delete "https-dns-proxy.$sec"
-fi
-fi
-done
-done
-for slot in 1 2 3 4 5 6 RU; do
-eval "want=\${SLOT_$slot}"
-[ -n "$want" ] || continue
-local target="$(hybrid_desired_port "$slot")"
-[ -n "$target" ] || continue
-local want_url="$(normalize_url "$(dns_url "$want")")"
-for sec in $(uci show https-dns-proxy 2>/dev/null | awk -F'[.=]' '/\..*=https-dns-proxy$/ {print $2}'); do
-local m="$(uci -q get "https-dns-proxy.$sec.dns_manager" 2>/dev/null)"
-local p="$(uci -q get "https-dns-proxy.$sec.listen_port" 2>/dev/null)"
-local u="$(normalize_url "$(uci -q get "https-dns-proxy.$sec.resolver_url" 2>/dev/null)")"
-if [ "$m" = "1" ] && [ "$p" = "$target" ] && [ "$u" != "$want_url" ]; then
-free_port || return 1
-local tmp="$FREE_PORT_RESULT"
-[ "$tmp" != "$target" ] || { free_port || return 1; tmp="$FREE_PORT_RESULT"; }
-uci set "https-dns-proxy.$sec.listen_port"="$tmp" || return 1
-fi
-done
-done
-uci commit https-dns-proxy 2>/dev/null || return 1
-return 0
-}
 apply_settings() {
 clear_screen
 run_discovery
@@ -2903,11 +2817,6 @@ go) printf 'ВКЛ • ожидает применения';;
 esac
 }
 
-toggle_and_apply_dnsmasq() {
-reconcile_dnsmasq >/dev/null 2>&1
-/etc/init.d/dnsmasq restart >/dev/null 2>&1
-save_config
-}
 remove_sysctl_base() {
 f="/etc/sysctl.d/90-dns-manager.conf"
 sf="$STATE_DIR/sysctl-before.conf"
@@ -2938,22 +2847,64 @@ else /etc/init.d/firewall restart >/dev/null 2>&1; fi
 }
 
 apply_extras_now() {
-case "$1" in
-balance|tld)   reconcile_dnsmasq >/dev/null 2>&1; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
-ntp)           [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback;;
-quic)          apply_quic_toggle;;
-mtu)           apply_mtu_toggle;;
-sysctl)        [ "$SYSCTL_TUNING" = 1 ] && apply_sysctl || remove_sysctl_base;;
-go)            [ "$GO_OPTIMIZE" = 1 ] && apply_go || remove_go_optimize;;
-force)         [ "$FORCE_DOH" = 1 ] && apply_dns_force || remove_dns_force; reload_fw;;
-ntp_clients)   [ "$NTP_CLIENTS" = 1 ] && apply_ntp_clients || remove_ntp_clients; /etc/init.d/dnsmasq restart >/dev/null 2>&1; reload_fw;;
-dnsmasq_perf)  [ "$DNSMASQ_PERF" = 1 ] && apply_dnsmasq_perf || remove_dnsmasq_perf; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
-client_fixes)  [ "$CLIENT_FIXES" = 1 ] && apply_client_fixes || remove_client_fixes; /etc/init.d/dnsmasq restart >/dev/null 2>&1;;
-sysctl_ext)    [ "$SYSCTL_EXTENDED" = 1 ] && apply_sysctl_extended || remove_sysctl_extended;;
-ts_hotplug)    [ "$TAILSCALE_HOTPLUG" = 1 ] && apply_tailscale_hotplug || remove_tailscale_hotplug;;
-cron)          cleanup_manager_cron;;
-esac
-save_config
+    _rc=0
+    _dnsmasq_restart=0
+    case "$1" in
+        balance|tld)
+            reconcile_dnsmasq >/dev/null 2>&1 || _rc=1
+            _dnsmasq_restart=1
+            ;;
+        ntp)
+            if [ "$NTP_IP_FALLBACK" = 1 ]; then apply_ntp_ip_fallback || _rc=1; fi
+            ;;
+        quic)
+            apply_quic_toggle || _rc=1
+            ;;
+        mtu)
+            apply_mtu_toggle || _rc=1
+            ;;
+        sysctl)
+            if [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl || _rc=1; else remove_sysctl_base || _rc=1; fi
+            ;;
+        go)
+            if [ "$GO_OPTIMIZE" = 1 ]; then apply_go || _rc=1; else remove_go_optimize || _rc=1; fi
+            ;;
+        force)
+            if [ "$FORCE_DOH" = 1 ]; then apply_dns_force || _rc=1; else remove_dns_force || _rc=1; fi
+            reload_fw || _rc=1
+            ;;
+        ntp_clients)
+            if [ "$NTP_CLIENTS" = 1 ]; then apply_ntp_clients || _rc=1; else remove_ntp_clients || _rc=1; fi
+            _dnsmasq_restart=1
+            reload_fw || _rc=1
+            ;;
+        dnsmasq_perf)
+            if [ "$DNSMASQ_PERF" = 1 ]; then apply_dnsmasq_perf || _rc=1; else remove_dnsmasq_perf || _rc=1; fi
+            _dnsmasq_restart=1
+            ;;
+        client_fixes)
+            if [ "$CLIENT_FIXES" = 1 ]; then apply_client_fixes || _rc=1; else remove_client_fixes || _rc=1; fi
+            _dnsmasq_restart=1
+            ;;
+        sysctl_ext)
+            if [ "$SYSCTL_EXTENDED" = 1 ]; then apply_sysctl_extended || _rc=1; else remove_sysctl_extended || _rc=1; fi
+            ;;
+        ts_hotplug)
+            if [ "$TAILSCALE_HOTPLUG" = 1 ]; then apply_tailscale_hotplug || _rc=1; else remove_tailscale_hotplug || _rc=1; fi
+            ;;
+        cron)
+            cleanup_manager_cron || _rc=1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    if [ "$_dnsmasq_restart" = 1 ]; then
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || _rc=1
+    fi
+    [ "$_rc" = 0 ] || return 1
+    save_config || return 1
+    return 0
 }
 
 apply_bootstrap_only() {
