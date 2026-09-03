@@ -346,7 +346,7 @@ pool_global|pool|NTP Pool Global||||hostname|no-smear|runtime-check
 pool_ru|pool|NTP Pool Russia||||hostname|no-smear|runtime-check
 EOF_NTP
 fi
-if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FIX13' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
+if [ ! -s "$BOOTSTRAP_CATALOG" ] || ! grep -q '^# BOOTSTRAPCATVER=6.6-FINAL-HYBRID' "$BOOTSTRAP_CATALOG" 2>/dev/null; then
 cat > "$BOOTSTRAP_CATALOG" <<'EOF_BOOT'
 # BOOTSTRAPCATVER=6.6-FINAL-HYBRID
 # ID|ПРОВАЙДЕР|IPV4|IPV6|РОЛЬ|СТАТУС
@@ -361,7 +361,7 @@ controld|Control D|76.76.2.0,76.76.10.0|2606:1a40::0,2606:1a40:1::0|bootstrap|ve
 mullvad|Mullvad|194.242.2.2,194.242.2.3|2a07:e340::2,2a07:e340::3|bootstrap|verified-current
 EOF_BOOT
 fi
-if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FIX13' "$BOGUS_CATALOG" 2>/dev/null; then
+if [ ! -s "$BOGUS_CATALOG" ] || ! grep -q '^# BOGUSCATVER=6.6-FINAL-HYBRID' "$BOGUS_CATALOG" 2>/dev/null; then
 cat > "$BOGUS_CATALOG" <<'EOF_BOGUS'
 # BOGUSCATVER=6.6-FINAL-HYBRID
 # ID|ТИП|IP|ОПИСАНИЕ|НАДЁЖНОСТЬ|СТАТУС
@@ -1284,91 +1284,13 @@ sysctl -w "$p" >/dev/null 2>&1 || warn_msg "Не удалось применит
 record_own "sysctl" "$key" "$val" "before=${before:-unknown}"
 done
 }
-remove_sysctl_base() {
-    f="/etc/sysctl.d/90-dns-manager.conf"
-    sf="$STATE_DIR/sysctl-before.conf"
-    [ -f "$f" ] || return 0
-    for kv in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.core.somaxconn; do
-        old="$(awk -F'|' -v k="$kv" '$1==k{print $2;exit}' "$sf" 2>/dev/null)"
-        [ -n "$old" ] && [ "$old" != unknown ] && sysctl -w "$kv=$old" >/dev/null 2>&1 || true
-    done
-    rm -f "$f" "$sf"
-}
-remove_go_optimize() {
-    for f in /etc/init.d/tg-ws-proxy-go /etc/init.d/tailscale; do
-        bak="$f.dns-manager.bak"
-        [ -f "$bak" ] || continue
-        curh="$(file_hash "$f")"
-        managedh="$(cat "$STATE_DIR/$(basename "$f").managed.sha256" 2>/dev/null)"
-        if [ -n "$managedh" ] && [ -n "$curh" ] && [ "$curh" != "$managedh" ]; then
-            warn_msg "Не восстанавливаю $f: файл изменён вручную после настройки."
-            continue
-        fi
-        mv "$bak" "$f" 2>/dev/null || continue
-        rm -f "$STATE_DIR/$(basename "$f").managed.sha256"
-    done
-}
-reload_fw() {
-    if [ "$SYS_FW" = fw4 ]; then
-        /etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1
-    else
-        /etc/init.d/firewall restart >/dev/null 2>&1
-    fi
-}
+
+
+
 # ==========================================
 # ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ — ПРИМЕНЕНИЕ
 # ==========================================
-apply_extras_now() {
-    case "$1" in
-        balance|tld)
-            reconcile_dnsmasq || return 1
-            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
-            ;;
-        ntp)
-            [ "$NTP_IP_FALLBACK" = 1 ] && apply_ntp_ip_fallback || true
-            ;;
-        quic)
-            apply_quic_toggle || return 1
-            ;;
-        mtu)
-            apply_mtu_toggle || return 1
-            ;;
-        sysctl)
-            if [ "$SYSCTL_TUNING" = 1 ]; then apply_sysctl; else remove_sysctl_base; fi
-            ;;
-        go)
-            if [ "$GO_OPTIMIZE" = 1 ]; then apply_go; else remove_go_optimize; fi
-            ;;
-        force)
-            if [ "$FORCE_DOH" = 1 ]; then apply_dns_force; else remove_dns_force; fi
-            reload_fw
-            ;;
-        ntp_clients)
-            if [ "$NTP_CLIENTS" = 1 ]; then apply_ntp_clients; else remove_ntp_clients; fi
-            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
-            reload_fw
-            ;;
-        dnsmasq_perf)
-            if [ "$DNSMASQ_PERF" = 1 ]; then apply_dnsmasq_perf; else remove_dnsmasq_perf; fi
-            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
-            ;;
-        client_fixes)
-            if [ "$CLIENT_FIXES" = 1 ]; then apply_client_fixes; else remove_client_fixes; fi
-            /etc/init.d/dnsmasq restart >/dev/null 2>&1 || return 1
-            ;;
-        sysctl_ext)
-            if [ "$SYSCTL_EXTENDED" = 1 ]; then apply_sysctl_extended; else remove_sysctl_extended; fi
-            ;;
-        ts_hotplug)
-            if [ "$TAILSCALE_HOTPLUG" = 1 ]; then apply_tailscale_hotplug; else remove_tailscale_hotplug; fi
-            ;;
-        cron)
-            if [ "$CRON_CLEANUP" = 1 ]; then cleanup_manager_cron; fi
-            ;;
-    esac
-    run_discovery
-    save_config
-}
+
 # ==========================================
 # ОПТИМИЗАЦИЯ GO / TAILSCALE / TG WS
 # ==========================================
@@ -2681,7 +2603,55 @@ done
 # ==========================================
 # ВЫБОР DNS-СЕРВЕРА ДЛЯ СЛОТА
 # ==========================================
-
+select_slot() {
+    slot="$1"
+    clear_screen
+    menu_header "⚙ ВЫБОР DNS ДЛЯ СЛОТА $slot"
+    n=1
+    while IFS='|' read -r id cat prof name url region status; do
+        case "$id" in
+            ''|\#*) continue ;;
+        esac
+        printf "  ${C_CYAN}${C_BOLD}[%3d]${C_NC} ${C_YELLOW}${C_BOLD}%-34s${C_NC} ${C_WHITE}[%s]${C_NC}\n" "$n" "$name" "$(category_ru "$cat")"
+        n=$((n+1))
+    done < "$DNS_CATALOG"
+    printf "\n"
+    printf "  ${C_YELLOW}${C_BOLD}[99]${C_NC} ${C_YELLOW}${C_BOLD}Очистить слот${C_NC}\n"
+    menu_back
+    menu_prompt
+    safe_read c
+    [ -z "$c" ] && return 0
+    if [ "$c" = 99 ]; then
+        eval "SLOT_$slot=''"
+        eval "SLOT_${slot}_CAT=''"
+        eval "PORT_$slot=''"
+        save_config
+        ok_msg "Слот $slot очищен."
+        pause
+        return 0
+    fi
+    case "$c" in
+        *[!0-9]*|'')
+            warn_msg "Неверный номер DNS."
+            pause
+            return 1
+            ;;
+    esac
+    row="$(awk -F'|' -v n="$c" 'BEGIN{i=0} $1 !~ /^#/ && NF>=5 {i++; if(i==n){print; exit}}' "$DNS_CATALOG" 2>/dev/null)"
+    id="$(printf '%s' "$row" | cut -d'|' -f1)"
+    catx="$(printf '%s' "$row" | cut -d'|' -f2)"
+    [ -n "$id" ] || { warn_msg "DNS с номером $c не найден."; pause; return 1; }
+    eval "SLOT_$slot=\"$id\""
+    eval "SLOT_${slot}_CAT=\"$catx\""
+    if [ "$DNS_PROFILE" = "hybrid" ]; then
+        eval "PORT_$slot=\"$(hybrid_desired_port "$slot")\""
+    else
+        eval "PORT_$slot=\"\""
+    fi
+    save_config
+    ok_msg "Для слота $slot выбран: $(dns_name "$id")."
+    pause
+}
 module_state_word() {
     _desired="$2"
     _real="$(check_module_state "$1")"
@@ -2905,35 +2875,35 @@ menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
 
 menu_section "🛡 СЕТЬ И ОБХОД"
 menu_item_state "[1]" "Блокировка QUIC" "$(module_state_word quic "$BLOCK_QUIC")"
-menu_note_plain "Блокирует QUIC по UDP/80 и UDP/443, чтобы трафик шёл через обычный TCP."
+menu_note_plain "Запрещает QUIC по UDP/80 и UDP/443."
 menu_item_state "[2]" "Исправление MTU / MSS" "$(module_state_word mtu "$MTU_FIX")"
-menu_note_plain "Настраивает MTU и MSS на WAN для более стабильной передачи пакетов."
+menu_note_plain "Подбирает сетевые параметры для снижения фрагментации."
 menu_item_state "[3]" "Принудительный DNS через DoH" "$(module_state_word force "$FORCE_DOH")"
-menu_note_plain "Перенаправляет DNS-запросы клиентов с порта 53 на DNS Manager."
+menu_note_plain "Перехватывает обычный DNS и направляет его в настроенный DoH."
 
 menu_section "⚡ ПРОИЗВОДИТЕЛЬНОСТЬ"
 menu_item_state "[4]" "Оптимизация TCP и Conntrack" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-menu_note_plain "Оптимизирует TCP и conntrack для большого числа одновременных соединений."
+menu_note_plain "Настраивает sysctl и таблицу соединений для меньших задержек."
 menu_item_state "[5]" "Кэширование DNS-запросов" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-menu_note_plain "Увеличивает DNS-кэш и лимит запросов dnsmasq, снижая число внешних обращений."
+menu_note_plain "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
 menu_item_state "[6]" "Оптимизация Go-сервисов" "$(module_state_word go "$GO_OPTIMIZE")"
-menu_note_plain "Ограничивает память Go и настраивает параметры Tailscale и TG WS."
+menu_note_plain "Настраивает память и служебные параметры Go / Tailscale / TG WS."
 
 menu_section "📡 СЕРВИСЫ И КЛИЕНТЫ"
 menu_item_state "[7]" "NTP для клиентов LAN" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-menu_note_plain "Передаёт устройствам LAN адрес роутера как NTP-сервер."
+menu_note_plain "Выдаёт клиентам роутера корректное время через NTP."
 menu_item_state "[8]" "Tailscale при поднятии WAN" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-menu_note_plain "Автоматически запускает Tailscale после восстановления интернет-соединения."
+menu_note_plain "Перезапускает Tailscale после восстановления WAN."
 menu_item_state "[9]" "Исправления телеметрии и связи" "$(module_state_word client_fixes "$CLIENT_FIXES")"
-menu_note_plain "Направляет служебные запросы проверки связи и телеметрии через заданные DNS."
+menu_note_plain "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
 
 menu_section "🧹 ОБСЛУЖИВАНИЕ"
 menu_item "[10]" "Очистка старых cron-заданий"
-menu_note_plain "Удаляет старые cron-задания, оставшиеся от предыдущих версий менеджера."
+menu_note_plain "Разовая очистка старых заданий DNS Manager."
 menu_item_state "[11]" "Автопроверка DoH (Watchdog)" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-menu_note_plain "Проверяет DoH каждые 15 минут и заменяет слот после двух неудачных проверок."
+menu_note_plain "Проверяет рабочие DoH и заменяет недоступные слоты."
 menu_item "[12]" "IP-заглушки провайдера"
-menu_note_plain "Добавляет IP-адреса, которые провайдер использует для подмены DNS-ответов."
+menu_note_plain "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
 
 menu_back
 menu_prompt
