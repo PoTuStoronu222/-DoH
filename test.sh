@@ -558,11 +558,18 @@ HAS_TAILSCALE="$OTHER_TAILSCALE"
 disc_firewall() {
     QUIC_OURS=0
     QUIC_FOREIGN=0
-    if uci show firewall 2>/dev/null | grep -q "name='Block_UDP_80'" ||        uci show firewall 2>/dev/null | grep -q "name='Block_UDP_443'"; then
-        QUIC_OURS=1
-    fi
+    _fw_state="$(uci show firewall 2>/dev/null)"
+    printf '%s\n' "$_fw_state" | grep -Eq "name='(Block_UDP_80|Block_UDP_443)'" && QUIC_OURS=1
     [ "$(uci -q get firewall.@defaults[0].flow_offloading 2>/dev/null)" = 1 ] && FLOW_OFFLOAD="yes" || FLOW_OFFLOAD="no"
     if command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then NFT_ACTIVE="yes"; else NFT_ACTIVE="no"; fi
+}
+
+delete_manager_quic_rules() {
+    _fw_state="$(uci show firewall 2>/dev/null)"
+    printf '%s\n' "$_fw_state" | awk -F'[.=]' -v q="'" '$3=="name" && ($4==q"Block_UDP_80"q || $4==q"Block_UDP_443"q) {print $2}' | sort -u | while IFS= read -r _rsec; do
+        [ -n "$_rsec" ] || continue
+        uci -q delete "firewall.$_rsec"
+    done
 }
 run_discovery() {
 init_dirs
@@ -1210,13 +1217,7 @@ reconcile_dnsmasq() {
 apply_quic() {
     [ "$BLOCK_QUIC" = 1 ] || return 0
 
-    for _rname in Block_UDP_80 Block_UDP_443; do
-        while :; do
-            _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
-            [ -n "$_ridx" ] || break
-            uci -q delete "firewall.$_ridx" || return 1
-        done
-    done
+    delete_manager_quic_rules
 
     uci add firewall rule >/dev/null 2>&1 || return 1
     uci set firewall.@rule[-1].name='Block_UDP_80' || return 1
@@ -2025,9 +2026,7 @@ if [ -s "$PREV_DNSMASQ" ]; then
     uci commit dhcp 2>/dev/null
     rm -f "$PREV_DNSMASQ" 2>/dev/null
 fi
-for r in Block_UDP_80 Block_UDP_443; do
-while :; do idx="$(uci show firewall 2>/dev/null | grep "name='$r'" | head -n1 | cut -d. -f2 | cut -d= -f1)"; [ -n "$idx" ] || break; uci -q delete "firewall.$idx"; done
-done
+delete_manager_quic_rules
 uci commit firewall 2>/dev/null
 remove_ntp_clients >/dev/null 2>&1 || true
 remove_client_fixes >/dev/null 2>&1 || true
@@ -2621,13 +2620,7 @@ save_config
 
 apply_quic_toggle() {
     if [ "$BLOCK_QUIC" != 1 ]; then
-        for _rname in Block_UDP_80 Block_UDP_443; do
-            while :; do
-                _ridx="$(uci show firewall 2>/dev/null | grep "name='$_rname'" | head -n1 | cut -d. -f2 | cut -d= -f1)"
-                [ -n "$_ridx" ] || break
-                uci -q delete "firewall.$_ridx" || break
-            done
-        done
+        delete_manager_quic_rules
     else
         apply_quic || return 1
     fi
