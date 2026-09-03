@@ -191,9 +191,9 @@ touch "$LOG_FILE" "$TX_LOG" "$OWNERSHIP" 2>/dev/null
 }
 write_catalogs() {
 rm -f "$DNS_CATALOG.previous" "$NTP_CATALOG.previous" "$BOOTSTRAP_CATALOG.previous" "$BOGUS_CATALOG.previous" 2>/dev/null
-if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=8.2-RU' "$DNS_CATALOG" 2>/dev/null; then
+if [ ! -s "$DNS_CATALOG" ] || ! grep -q '^# DNSCATVER=8.4-RU' "$DNS_CATALOG" 2>/dev/null; then
 cat > "$DNS_CATALOG" <<'EOF_DNS'
-# DNSCATVER=8.2-RU
+# DNSCATVER=8.4-RU
 # Список кандидатов. Работоспособность проверяется с роутера.
 # ФОРМАТ СТРОКИ: ID|CATEGORY|PROFILE|NAME|URL|REGION|STATUS
 # ==========================================
@@ -583,6 +583,23 @@ disc_firewall
 log_tx "DISCOVER" "router" "READ" "OK" "OpenWrt=$SYS_OWRT;fw=$SYS_FW;dns=$DNSMASQ_RUN;doh=$DOH_TOTAL"
 }
 # ==========================================
+# ОЧИСТКА КАТАЛОГА DNS
+# ==========================================
+sanitize_dns_catalog() {
+[ -f "$DNS_CATALOG" ] || return 0
+_tmpcat="$TMP_DIR/dns-catalog-sanitize"
+awk -F'|' 'BEGIN{IGNORECASE=1}
+$0 !~ /^#/ && NF>=5 && $1 !~ /nullsproxy/ && $4 !~ /null.?s proxy/ && $5 !~ /nullsproxy/ {print}
+$0 ~ /^#/ {print}
+' "$DNS_CATALOG" > "$_tmpcat" 2>/dev/null || return 0
+if [ -s "$_tmpcat" ]; then
+    mv "$_tmpcat" "$DNS_CATALOG"
+else
+    rm -f "$_tmpcat" 2>/dev/null
+fi
+}
+
+# ==========================================
 # РАБОТА С КАТАЛОГАМИ
 # ==========================================
 dns_field() { awk -F'|' -v id="$1" -v f="$2" '$1==id{print $f;exit}' "$DNS_CATALOG"; }
@@ -643,6 +660,7 @@ return 1
 # ТЕСТИРОВАНИЕ DNS-СЕРВЕРОВ
 # ==========================================
 test_one_dns() {
+trap - EXIT INT TERM
 id="$1"; url="$(normalize_url "$(dns_url "$id")")"; name="$(dns_name "$id")"; cat="$(dns_cat "$id")"
 host="$(url_host "$url")"
 port="$(url_port "$url")"
@@ -684,24 +702,36 @@ rm -f "$q" "$body" "$hdr"
 # ==========================================
 test_dns_catalog() {
 [ "$HAS_CURL" = yes ] || { warn_msg "curl не установлен. Сначала установите его через пункт I."; return 1; }
-rm -f "$TMP_DIR/t."* "$TMP_DIR/q."* "$TMP_DIR/body."* "$TMP_DIR/h."* "$TEST_RESULTS" 2>/dev/null
+sanitize_dns_catalog
 total="$(count_dns)"
+[ "$total" -gt 0 ] 2>/dev/null || { warn_msg "Каталог DNS пуст."; return 1; }
+
+TEST_RUN_DIR="$TMP_DIR/test-$$"
+rm -rf "$TEST_RUN_DIR" 2>/dev/null
+mkdir -p "$TEST_RUN_DIR" || { warn_msg "Не удалось подготовить каталог для теста DNS."; return 1; }
+
+rm -f "$TEST_RESULTS" 2>/dev/null
 printf "${C_WHITE}Проверяю %s DNS/DoH параллельно...${C_NC} ${C_YELLOW}(может занять до 5 минут)${C_NC}\n" "$total"
 n=0
 while IFS='|' read -r id _rest; do
-case "$id" in ''|\#*) continue;; esac
-test_one_dns "$id" &
-n=$((n+1))
-[ $((n % 8)) -eq 0 ] && wait
+    case "$id" in ''|\#*) continue;; esac
+    TMP_DIR="$TEST_RUN_DIR" test_one_dns "$id" &
+    n=$((n+1))
+    [ $((n % 8)) -eq 0 ] && wait
 done < "$DNS_CATALOG"
 wait
-cat "$TMP_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
+
+cat "$TEST_RUN_DIR"/t.* > "$TEST_RESULTS" 2>/dev/null
+rm -rf "$TEST_RUN_DIR" 2>/dev/null
+
 okn="$(grep -c '|OK$' "$TEST_RESULTS" 2>/dev/null)"
+[ -n "$okn" ] || okn=0
 failn=$((total-okn))
 printf "${C_GREEN}✓ Успешно: %s${C_NC} | ${C_YELLOW}Проблемные: %s${C_NC} | Всего: %s\n" "$okn" "$failn" "$total"
 printf "${C_CYAN}Время — полное время ответа DoH, а не ICMP-пинг. Меньше — быстрее.${C_NC}\n"
 log_tx "TEST" "dns-catalog" "RUN" "OK" "ok=$okn,total=$total"
 }
+
 # ==========================================
 # ПОДБОР ЛУЧШИХ DNS
 # ==========================================
@@ -2200,8 +2230,141 @@ case "$goal" in
 esac
 done
 }
+# ==========================================
+# УМНЫЙ ПОДБОР DNS
+# ==========================================
+dns_result_status() {
+awk -F'|' -v id="$1" '$1==id{print $5;exit}' "$TEST_RESULTS" 2>/dev/null
+}
+
+dns_candidate_rows() {
+_goal="$1"
+awk -F'|' -v c="$_goal" '
+FNR==NR {
+    if ($0 !~ /^#/ && NF>=5) {
+        u=$5
+        gsub(/[[:space:]]/,"",u)
+        sub(/\\\/*$/,"",u)
+        url[$1]=u
+    }
+    next
+}
+$5=="OK" && $2!="regional" {
+    if (c=="__ANY__" || $2==c) {
+        u=url[$1]
+        if (u!="") print $1"|"$2"|"$3"|"$4"|"$5"|"u
+    }
+}' "$DNS_CATALOG" "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n
+}
+
+smart_recheck_selection() {
+_goal="$1"
+_used="$TMP_DIR/smart-used"
+_tried="$TMP_DIR/smart-tried"
+: > "$_used"
+: > "$_tried"
+
+for _s in 1 2 3 4 5 6; do
+    eval "_id=\${SLOT_${_s}:-}"
+    [ -n "$_id" ] || continue
+    _u="$(normalize_url "$(dns_url "$_id")")"
+    [ -n "$_u" ] && printf '%s\n' "$_u" >> "$_used"
+done
+[ -n "$SLOT_RU" ] && printf '%s\n' "$(normalize_url "$(dns_url "$SLOT_RU")")" >> "$_used"
+[ -n "$SLOT_RU_2" ] && printf '%s\n' "$(normalize_url "$(dns_url "$SLOT_RU_2")")" >> "$_used"
+
+for _s in 1 2 3 4 5 6; do
+    eval "_id=\${SLOT_${_s}:-}"
+    [ -n "$_id" ] || continue
+
+    _good=0
+    verify_doh_endpoint "$(dns_url "$_id")" "$(dns_name "$_id")" >/dev/null 2>&1 && _good=1
+    [ "$_good" = 1 ] && continue
+
+    printf '%s\n' "$(normalize_url "$(dns_url "$_id")")" >> "$_tried"
+    _desired="$(eval "printf '%s' \"\${SLOT_${_s}_CAT:-}\"")"
+    [ -n "$_desired" ] || _desired="$_goal"
+
+    _cand_list="$TMP_DIR/smart-candidates-$_s"
+    dns_candidate_rows "$_desired" > "$_cand_list"
+    if [ "$_goal" = "bypass" ] || [ "$_desired" = "bypass" ]; then
+        dns_candidate_rows clean >> "$_cand_list"
+    elif [ "$_goal" = "all" ]; then
+        dns_candidate_rows __ANY__ >> "$_cand_list"
+    fi
+
+    _replacement=""
+    while IFS='|' read -r _rid _rcat _rname _rms _rst _rurl; do
+        [ -n "$_rid" ] || continue
+        grep -qxF "$_rurl" "$_used" 2>/dev/null && continue
+        grep -qxF "$_rurl" "$_tried" 2>/dev/null && continue
+        if verify_doh_endpoint "$_rurl" "$_rname" >/dev/null 2>&1; then
+            _replacement="$_rid"
+            printf '%s\n' "$_rurl" >> "$_used"
+            break
+        fi
+        printf '%s\n' "$_rurl" >> "$_tried"
+    done < "$_cand_list"
+
+    if [ -n "$_replacement" ]; then
+        eval "SLOT_$_s=\"$_replacement\""
+        if [ "$_goal" = "bypass" ]; then
+            eval "SLOT_${_s}_CAT=\"bypass\""
+        else
+            eval "SLOT_${_s}_CAT=\"$(dns_cat "$_replacement")\""
+        fi
+    else
+        eval "SLOT_$_s=''"
+        eval "SLOT_${_s}_CAT=\"${_desired}\""
+    fi
+done
+
+# RU-маршрут обязан иметь отдельный реально доступный DoH.
+if [ -n "$SLOT_RU" ]; then
+    if ! verify_doh_endpoint "$(dns_url "$SLOT_RU")" "$(dns_name "$SLOT_RU")" >/dev/null 2>&1; then
+        _ru_new=""
+        while IFS='|' read -r _rid _rcat _rname _rms _rst _rurl; do
+            grep -qxF "$_rurl" "$_used" 2>/dev/null && continue
+            grep -qxF "$_rurl" "$_tried" 2>/dev/null && continue
+            if verify_doh_endpoint "$_rurl" "$_rname" >/dev/null 2>&1; then
+                _ru_new="$_rid"
+                break
+            fi
+            printf '%s\n' "$_rurl" >> "$_tried"
+        done <<EOF_RU
+$(awk -F'|' -v skip="$SLOT_RU" '$2=="regional" && $5=="OK" && $1!=skip{print}' "$TEST_RESULTS" 2>/dev/null | sort -t'|' -k4,4n)
+EOF_RU
+        SLOT_RU="$_ru_new"
+        SLOT_RU_CAT="regional"
+    fi
+fi
+
+# Health gate: never enter apply with a nearly empty or unchecked profile.
+_general=0
+for _s in 1 2 3 4 5 6; do
+    eval "_id=\${SLOT_${_s}:-}"
+    [ -n "$_id" ] && _general=$((_general+1))
+done
+
+if [ "$_goal" = "bypass" ]; then
+    [ "$_general" -ge 3 ] || { warn_msg "После повторной проверки осталось меньше 3 рабочих DNS. Конфигурация не применяется."; return 1; }
+elif [ "$_goal" = "all" ]; then
+    [ "$_general" -ge 2 ] || { warn_msg "После повторной проверки осталось меньше 2 рабочих DNS. Конфигурация не применяется."; return 1; }
+else
+    [ "$_general" -ge 1 ] || { warn_msg "В выбранной категории не осталось рабочего DNS. Конфигурация не применяется."; return 1; }
+fi
+
+if [ "$_goal" = "bypass" ]; then
+    [ -n "$SLOT_RU" ] || { warn_msg "Не удалось подтвердить рабочий региональный DNS. Конфигурация не применяется."; return 1; }
+fi
+
+save_config
+return 0
+}
+
 auto_fill_slots() {
 _cat="$1"
+sanitize_dns_catalog
 case "$_cat" in bypass|clean|security|privacy|adblock|family|social|all) ;; *)
     warn_msg "Неизвестная категория DNS."
     pause
@@ -2213,6 +2376,15 @@ if [ ! -s "$TEST_RESULTS" ]; then
     test_dns_catalog
 fi
 [ -s "$TEST_RESULTS" ] || { warn_msg "Не удалось получить результаты теста."; pause; return 1; }
+_now="$(date +%s)"
+_mtime="$(stat -c %Y "$TEST_RESULTS" 2>/dev/null || printf '0')"
+case "$_mtime" in ''|*[!0-9]*) _mtime=0 ;; esac
+_age=$(( _now - _mtime ))
+[ "$_age" -lt 0 ] && _age=999999999
+if [ "$_age" -gt 1800 ]; then
+    info_msg "Результаты DNS старше 30 минут. Выполняю контрольный тест перед подбором."
+    test_dns_catalog || return 1
+fi
 
 _pool="$TMP_DIR/auto-slots"
 _src="$TMP_DIR/auto-candidates"
@@ -2285,6 +2457,10 @@ if [ "$_cat" = bypass ] && [ "$_n_clean_fallback" -gt 0 ]; then
     warn_msg "Рабочих DNS обхода не хватило: $_n_bypass из 6. Недостающие $_n_clean_fallback слота заполнены быстрыми clean DNS; целевая категория слотов сохранена как bypass."
 fi
 
+if ! smart_recheck_selection "$_cat"; then
+    return 1
+fi
+
 _ru1=""
 _yandex_ok="$(awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{print "yes";exit}' "$TEST_RESULTS" 2>/dev/null)"
 if [ "$_yandex_ok" = yes ]; then
@@ -2296,6 +2472,23 @@ else
 fi
 SLOT_RU_2="$(awk -F'|' -v skip="$_ru1" '$2=="regional" && $5=="OK" && $1!=skip{print $1;exit}' "$TEST_RESULTS" 2>/dev/null)"
 SLOT_RU_2_CAT="regional"
+
+# Контрольная проверка выбранного регионального DNS перед сохранением.
+if [ -n "$SLOT_RU" ] && ! verify_doh_endpoint "$(dns_url "$SLOT_RU")" "$(dns_name "$SLOT_RU")" >/dev/null 2>&1; then
+    SLOT_RU=""
+    SLOT_RU_CAT="regional"
+fi
+if [ "$_cat" = bypass ] && [ -z "$SLOT_RU" ]; then
+    warn_msg "Рабочий региональный DNS не подтверждён. Автопрофиль не применяется."
+    return 1
+fi
+if [ -n "$SLOT_RU_2" ]; then
+    if ! verify_doh_endpoint "$(dns_url "$SLOT_RU_2")" "$(dns_name "$SLOT_RU_2")" >/dev/null 2>&1; then
+        SLOT_RU_2=""
+        SLOT_RU_2_CAT="regional"
+    fi
+fi
+
 save_config
 printf "${C_GREEN}✓ Автоматически выбран набор DNS без дублей.${C_NC}\n"
 for i in 1 2 3 4 5 6; do eval "_v=\${SLOT_$i}"; [ -n "$_v" ] && printf "  ${C_WHITE}Слот %s: %s${C_NC}\n" "$i" "$(dns_name "$_v")"; done
@@ -3063,7 +3256,20 @@ printf "${C_YELLOW}⚠${C_NC} DNS не заменяет Zapret/VPN при бло
 test_dns_catalog
 [ -s "$TEST_RESULTS" ] || return
 DNS_PROFILE="hybrid"
-auto_fill_slots bypass
+if ! auto_fill_slots bypass; then
+    CORE_ONLY=0
+    return
+fi
+if ! awk -F'|' '$1=="yandex_ru" && $2=="regional" && $5=="OK"{found=1} END{exit found?0:1}' "$TEST_RESULTS" 2>/dev/null; then
+    warn_msg "Yandex RU не прошёл тест. Автопрофиль не применяется."
+    CORE_ONLY=0
+    return
+fi
+if ! verify_doh_endpoint "$(dns_url yandex_ru)" "Yandex RU" >/dev/null 2>&1; then
+    warn_msg "Yandex RU не подтвердил ответ при контрольной проверке. Автопрофиль не применяется."
+    CORE_ONLY=0
+    return
+fi
 SLOT_RU="yandex_ru"
 SLOT_RU_2=""
 SLOT_RU_CAT="regional"
@@ -3187,6 +3393,7 @@ preflight_readonly
 init_dirs
 auto_update_manager        
 write_catalogs
+sanitize_dns_catalog
 load_config
 if [ "${_had_dns_profile:-1}" = 0 ]; then
 hybrid_set_defaults
