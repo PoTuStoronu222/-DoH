@@ -144,7 +144,7 @@ menu_header() {
 clear_screen
 _title="$1"
 printf "\n${C_TITLE}╔══════════════════════════════════════════════════════════════╗${C_NC}\n"
-printf "${C_TITLE}║${C_NC} ${C_BOLD}${C_WHITE}%-58s${C_NC} ${C_TITLE}║${C_NC}\n" "$_title"
+printf "${C_TITLE}║${C_NC} ${C_BOLD}${C_YELLOW}%-57s${C_NC} ${C_TITLE}║${C_NC}\n" "$_title"
 printf "${C_TITLE}╚══════════════════════════════════════════════════════════════╝${C_NC}\n"
 }
 menu_section() {
@@ -158,6 +158,9 @@ printf "  ${C_CYAN}${C_BOLD}%-5s${C_NC} ${C_YELLOW}${C_BOLD}%-38s${C_NC} %b\n" "
 }
 menu_note() {
 printf "      ${C_CYAN}%s${C_NC}\n" "$1"
+}
+menu_note_plain() {
+printf "      ${C_WHITE}%s${C_NC}\n" "$1"
 }
 menu_back() {
 printf "\n${C_GREEN}${C_BOLD}[Enter]${C_NC} ${C_CYAN}Назад${C_NC}\n\n"
@@ -2691,35 +2694,35 @@ menu_header "🔧 ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ"
 
 menu_section "🛡 СЕТЬ И ОБХОД"
 menu_item_state "[1]" "Блокировка QUIC" "$(module_state_word quic "$BLOCK_QUIC")"
-menu_note "Запрещает QUIC по UDP/80 и UDP/443."
+menu_note_plain "Запрещает QUIC по UDP/80 и UDP/443."
 menu_item_state "[2]" "Исправление MTU / MSS" "$(module_state_word mtu "$MTU_FIX")"
-menu_note "Подбирает сетевые параметры для снижения фрагментации."
+menu_note_plain "Подбирает сетевые параметры для снижения фрагментации."
 menu_item_state "[3]" "Принудительный DNS через DoH" "$(module_state_word force "$FORCE_DOH")"
-menu_note "Перехватывает обычный DNS и направляет его в настроенный DoH."
+menu_note_plain "Перехватывает обычный DNS и направляет его в настроенный DoH."
 
 menu_section "⚡ ПРОИЗВОДИТЕЛЬНОСТЬ"
 menu_item_state "[4]" "Оптимизация TCP и Conntrack" "$(module_state_word sysctl "$SYSCTL_TUNING")"
-menu_note "Настраивает sysctl и таблицу соединений для меньших задержек."
+menu_note_plain "Настраивает sysctl и таблицу соединений для меньших задержек."
 menu_item_state "[5]" "Кэширование DNS-запросов" "$(module_state_word dnsmasq_perf "$DNSMASQ_PERF")"
-menu_note "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
+menu_note_plain "Увеличивает кэш dnsmasq, чтобы чаще отвечать без нового запроса наружу."
 menu_item_state "[6]" "Оптимизация Go-сервисов" "$(module_state_word go "$GO_OPTIMIZE")"
-menu_note "Настраивает память и служебные параметры Go / Tailscale / TG WS."
+menu_note_plain "Настраивает память и служебные параметры Go / Tailscale / TG WS."
 
 menu_section "📡 СЕРВИСЫ И КЛИЕНТЫ"
 menu_item_state "[7]" "NTP для клиентов LAN" "$(module_state_word ntp_clients "$NTP_CLIENTS")"
-menu_note "Выдаёт клиентам роутера корректное время через NTP."
+menu_note_plain "Выдаёт клиентам роутера корректное время через NTP."
 menu_item_state "[8]" "Tailscale при поднятии WAN" "$(module_state_word ts_hotplug "$TAILSCALE_HOTPLUG")"
-menu_note "Перезапускает Tailscale после восстановления WAN."
+menu_note_plain "Перезапускает Tailscale после восстановления WAN."
 menu_item_state "[9]" "Исправления телеметрии и связи" "$(module_state_word client_fixes "$CLIENT_FIXES")"
-menu_note "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
+menu_note_plain "Фиксирует DNS-запросы для сервисов проверки связи и телеметрии."
 
 menu_section "🧹 ОБСЛУЖИВАНИЕ"
 menu_item "[10]" "Очистка старых cron-заданий"
-menu_note "Разовая очистка старых заданий DNS Manager."
+menu_note_plain "Разовая очистка старых заданий DNS Manager."
 menu_item_state "[11]" "Автопроверка DoH (Watchdog)" "$(module_state_word watchdog "$WATCHDOG_ENABLED")"
-menu_note "Проверяет рабочие DoH и заменяет недоступные слоты."
+menu_note_plain "Проверяет рабочие DoH и заменяет недоступные слоты."
 menu_item "[12]" "IP-заглушки провайдера"
-menu_note "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
+menu_note_plain "Ручной выбор IP-адресов провайдерских заглушек (bogus-nxdomain)."
 
 menu_back
 menu_prompt
