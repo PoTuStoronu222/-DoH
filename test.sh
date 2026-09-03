@@ -337,6 +337,7 @@ cf_ip|global|Cloudflare|162.159.200.1 162.159.200.123|2606:4700:f1::1 2606:4700:
 nist_ip|global|NIST|129.6.15.28 129.6.15.29 129.6.15.30 129.6.15.27 129.6.15.26|2610:20:6f15:15::27 2610:20:6f15:15::26|ip-first|no-smear|verified-current
 google_ip|special|Google Public NTP|216.239.35.0 216.239.35.4 216.239.35.8 216.239.35.12||ip-only|smear|verified-current
 vniiftri_moscow|ru|ВНИИФТРИ Менделеево|89.109.251.21 89.109.251.22 89.109.251.23 89.109.251.24 89.109.251.25||ip-first|no-smear|verified-source
+vniiftri_all|ru|ВНИИФТРИ — все регионы|89.109.251.21 89.109.251.22 89.109.251.23 89.109.251.24 89.109.251.25 46.254.241.74 46.254.241.75 212.19.6.218 212.19.17.26 80.242.83.227 80.242.83.228 91.189.237.182||ip-first|no-smear|verified-source
 vniiftri_irkutsk|ru|ВНИИФТРИ Иркутск|46.254.241.74 46.254.241.75||ip-first|no-smear|verified-source
 vniiftri_khabarovsk|ru|ВНИИФТРИ Хабаровск|212.19.6.218 212.19.17.26||ip-first|no-smear|verified-source
 vniiftri_novosibirsk|ru|ВНИИФТРИ Новосибирск|80.242.83.227 80.242.83.228||ip-first|no-smear|verified-source
@@ -962,6 +963,49 @@ case "$c" in
 *) warn_msg "Неверный пункт."; pause;;
 esac
 done
+}
+find_own_doh_by_url() {
+awk -F'|' -v u="$(normalize_url "$1")" '$6==u && $3=="OURS"{print $1"|"$2"|"$6;exit}' "$DOH_INV"
+}
+find_any_doh_by_url() {
+awk -F'|' -v u="$(normalize_url "$1")" '$6==u{print $1"|"$2"|"$3"|"$4"|"$5;exit}' "$DOH_INV"
+}
+find_own_doh_by_port() {
+awk -F'|' -v p="$1" '$2==p && $3=="OURS"{print $1"|"$2"|"$6;exit}' "$DOH_INV"
+}
+port_used_anywhere() {
+p="$1"
+[ -s "$LISTENERS" ] || return 2
+grep -qE ":$p([[:space:]]|$)" "$LISTENERS" 2>/dev/null && return 0
+awk -F'|' -v p="$p" '$2==p{found=1} END{exit found?0:1}' "$DOH_INV"
+}
+port_reserved_tx() {
+p="$1"
+for rp in $TX_RESERVED_PORTS; do [ "$rp" = "$p" ] && return 0; done
+return 1
+}
+claim_port_tx() {
+p="$1"
+port_reserved_tx "$p" && return 1
+TX_RESERVED_PORTS="$TX_RESERVED_PORTS $p"
+return 0
+}
+FREE_PORT_RESULT=""
+free_port() {
+FREE_PORT_RESULT=""
+p=5053
+while [ "$p" -le 5099 ]; do
+port_reserved_tx "$p" && { p=$((p+1)); continue; }
+port_used_anywhere "$p"; rc=$?
+[ "$rc" = 2 ] && return 2
+if [ "$rc" = 1 ]; then
+claim_port_tx "$p" || { p=$((p+1)); continue; }
+FREE_PORT_RESULT="$p"
+return 0
+fi
+p=$((p+1))
+done
+return 1
 }
 # ==========================================
 # DoH — ПРИМЕНЕНИЕ КОНФИГУРАЦИИ
